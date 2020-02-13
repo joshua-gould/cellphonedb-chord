@@ -21,10 +21,13 @@
         <button id="save" disabled>Save SVG</button>
     </div>
 </div>
-<div id="chord"></div>
 
+<div id="chord"></div>
+<div id="tooltip"
+     style="font-family: 'Roboto Condensed'; font-size:14px; color:white;background:rgba(97,97,97,0.7);position: absolute;pointer-events: none;"></div>
 <script>
     let animateBtn = document.getElementById('animate');
+    let tooltip = d3.select('#tooltip');
     let saveBtn = document.getElementById('save');
     let svg = null;
     let width = 450;
@@ -62,6 +65,7 @@
             let lines = contents.split('\n');
             let header = lines[0].split(tab);
             let rankIndex = header.indexOf('rank');
+            let interactingPairIndex = header.indexOf('interacting_pair');
             // header names are pairs of clusters separated by |
             let nameToIndex = {};
             let numberOfClusters = 0;
@@ -86,33 +90,44 @@
                 matrix.push(new Float32Array(numberOfClusters));
             }
             let rowAndColumns = [];
+            let ligandReceptors = {}; // key is ligand cluster-receptor cluster, value is array of ligand receptors
             for (let i = 0; i < headerNames.length; i++) {
                 let headerName = headerNames[i];
                 let row = nameToIndex[headerName[0]];
                 let column = nameToIndex[headerName[1]];
+                ligandReceptors[headerName.join('|')] = [];
                 rowAndColumns.push([row, column]);
             }
 
+            data.ligandReceptors = ligandReceptors;
             data.names = names;
             data.matrix = matrix; // name by name matrix
+
             for (let i = 1; i < lines.length; i++) {
                 let line = lines[i];
                 let tokens = line.split(tab);
+                let pair = tokens[interactingPairIndex];
                 for (let j = 0; j < headerNames.length; j++) {
                     let value = parseFloat(tokens[j + rankIndex + 1]);
 
-                    if (!isNaN(value)) {
+                    if (!isNaN(value) && value > 0) {
                         let rowAndColumn = rowAndColumns[j];
-                        matrix[rowAndColumn[0]][rowAndColumn[1]] = value;
+                        let row = rowAndColumn[0];
+                        let column = rowAndColumn[1];
+                        ligandReceptors[headerNames[j].join('|')].push(pair);
+                        matrix[row][column] = value;
                     }
                 }
             }
-
+            for (let key in ligandReceptors) {
+                let values = ligandReceptors[key];
+                ligandReceptors[key] = values.sort();
+            }
             createChordDiagram();
         };
 
         reader.onerror = function (event) {
-            console.error("File could not be read! Code " + event.target.error.code);
+            alert("Unable to read file.");
         };
 
         reader.readAsText(f);
@@ -176,9 +191,19 @@
         };
     }
 
-    function fadeChord(opacityArcs, opacityChords) {
+    function fadeChord(opacityArcs, opacityChords, isSelected) {
         return function (g, i) {
+            if (isSelected) {
+                let ligandCluster = data.names[g.source.index];
+                let receptorCluster = data.names[g.target.index];
 
+                let pairs = data.ligandReceptors[ligandCluster + '|' + receptorCluster];
+                tooltip.html(ligandCluster + ' - ' + receptorCluster + ' (' + pairs.length + ')<br>' + pairs.join('<br>'))
+                    .style("left", (d3.event.pageX) + "px")
+                    .style("top", (d3.event.pageY - 28) + "px");
+            } else {
+                tooltip.html('');
+            }
             svg.selectAll(".chord path")
                 .filter(function (d, j) {
                     return j != i;
@@ -191,7 +216,6 @@
                 })
                 .transition()
                 .style("opacity", opacityArcs);
-
 
         };
     }
@@ -273,13 +297,6 @@
             .attr("d", arc).on("mouseover", fade(.1))
             .on("mouseout", fade(1));
 
-        group.append("path")
-            .attr("fill", d => color(data.names[d.index]))
-            .attr("opacity", opacity)
-            .attr("stroke", d => color(data.names[d.index]))
-            .attr("d", arc).on("mouseover", fade(.1))
-            .on("mouseout", fade(1));
-
 
         group.append("text")
             .each(d => {
@@ -302,8 +319,9 @@
             .attr("fill", d => color(data.names[d.source.index]))
             .attr("opacity", opacity)
             .attr("d", ribbon)
-            .on("mouseover", fadeChord(0.1, 0.1))
-            .on("mouseout", fadeChord(1, 1));
+            .on("mouseover", fadeChord(0.1, 0.1, true))
+            .on("mouseout", fadeChord(1, 1, false));
+
     }
 
 
