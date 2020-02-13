@@ -1,0 +1,315 @@
+<html>
+<head><title>CellphoneDB Chord</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto Condensed:400">
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        #chord {
+            stroke-width: 0.5px;
+            font-family: 'Roboto Condensed';
+            font-size: 6px
+        }
+    </style>
+</head>
+
+<body>
+<div>
+    <label>Browse or Drag and Drop <a href="https://www.cellphonedb.org/" target="_blank">CellPhoneDB</a>
+        significant_means.txt</label>
+    <input type="file" id="input_file">
+    <div>
+        <button id="animate" disabled>Play</button>
+        <button id="save" disabled>Save SVG</button>
+    </div>
+</div>
+<div id="chord"></div>
+
+<script>
+    let animateBtn = document.getElementById('animate');
+    let saveBtn = document.getElementById('save');
+    let svg = null;
+    let width = 450;
+    let height = width;
+    let data = {matrix: [], names: []};
+    let animating = false;
+
+    function startAnimation() {
+        animating = true;
+        window.setTimeout(animateChords, 200);
+    }
+
+
+    animateBtn.addEventListener('click', function (e) {
+        if (animating) {
+            animateBtn.innerText = 'Play';
+            stopAnimation();
+        } else {
+            animateBtn.innerText = 'Pause';
+            startAnimation();
+        }
+    });
+    saveBtn.addEventListener('click', function (e) {
+        saveSvg(svg.node(), 'chord.svg');
+    });
+
+    function loadFile(f) {
+        document.getElementById('chord').innerHTML = '';
+        animateBtn.disabled = false;
+        saveBtn.disabled = false;
+        let reader = new FileReader();
+        reader.onload = function (event) {
+            let contents = event.target.result;
+            let tab = /\t/;
+            let lines = contents.split('\n');
+            let header = lines[0].split(tab);
+            let rankIndex = header.indexOf('rank');
+            // header names are pairs of clusters separated by |
+            let nameToIndex = {};
+            let numberOfClusters = 0;
+            let headerNames = [];
+            for (let j = rankIndex + 1; j < header.length; j++) {
+                let names = header[j].split('|');
+                headerNames.push(names);
+                names.forEach(name => {
+                    let existingIndex = nameToIndex[name];
+                    if (existingIndex === undefined) {
+                        nameToIndex[name] = numberOfClusters;
+                        numberOfClusters++;
+                    }
+                });
+            }
+            let matrix = [];
+            let names = [];
+            for (let name in nameToIndex) {
+                names[nameToIndex[name]] = name;
+            }
+            for (let i = 0; i < numberOfClusters; i++) {
+                matrix.push(new Float32Array(numberOfClusters));
+            }
+            let rowAndColumns = [];
+            for (let i = 0; i < headerNames.length; i++) {
+                let headerName = headerNames[i];
+                let row = nameToIndex[headerName[0]];
+                let column = nameToIndex[headerName[1]];
+                rowAndColumns.push([row, column]);
+            }
+
+            data.names = names;
+            data.matrix = matrix; // name by name matrix
+            for (let i = 1; i < lines.length; i++) {
+                let line = lines[i];
+                let tokens = line.split(tab);
+                for (let j = 0; j < headerNames.length; j++) {
+                    let value = parseFloat(tokens[j + rankIndex + 1]);
+
+                    if (!isNaN(value)) {
+                        let rowAndColumn = rowAndColumns[j];
+                        matrix[rowAndColumn[0]][rowAndColumn[1]] = value;
+                    }
+                }
+            }
+
+            createChordDiagram();
+        };
+
+        reader.onerror = function (event) {
+            console.error("File could not be read! Code " + event.target.error.code);
+        };
+
+        reader.readAsText(f);
+    }
+
+    let inputFile = document.getElementById("input_file");
+    inputFile.addEventListener("change", function (event) {
+        loadFile(inputFile.files[0]);
+    }, false);
+
+
+    document.body.addEventListener('drop', function (event) {
+        document.body.style.border = '';
+        event.preventDefault();
+        event.stopPropagation();
+        let dt = event.dataTransfer;
+        let files = dt.files;
+        loadFile(files[0]);
+    }, false);
+    document.body.addEventListener('dragover', function (event) {
+        document.body.style.border = '2px solid black';
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+    }, false);
+    document.body.addEventListener('dragend', function (event) {
+        document.body.style.border = '';
+
+    }, false);
+
+
+    function saveSvg(svgEl, name) {
+        svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        let svgData = svgEl.outerHTML;
+        let preface = '<?xml version="1.0" standalone="no"?>\r\n';
+        let svgBlob = new Blob([preface, svgData], {type: "image/svg+xml;charset=utf-8"});
+        let svgUrl = URL.createObjectURL(svgBlob);
+        let downloadLink = document.createElement("a");
+        downloadLink.href = svgUrl;
+        downloadLink.download = name;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+    }
+
+    let color = d3.scaleOrdinal([
+        '#1f77b4', '#aec7e8', '#ff7f0e',
+        '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd',
+        '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
+        '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']);
+    let opacity = 0.7;
+
+    function fade(opacity) {
+        return function (g, i) {
+            svg.selectAll(".chord path")
+                .filter(function (d) {
+                    return d.source.index != i && d.target.index != i;
+                })
+                .transition()
+                .style("opacity", opacity);
+        };
+    }
+
+    function fadeChord(opacityArcs, opacityChords) {
+        return function (g, i) {
+
+            svg.selectAll(".chord path")
+                .filter(function (d, j) {
+                    return j != i;
+                })
+                .transition()
+                .style("opacity", opacityChords);
+            svg.selectAll(".arc path")
+                .filter(function (d) {
+                    return !(d.index == g.source.index || d.index == g.target.index);
+                })
+                .transition()
+                .style("opacity", opacityArcs);
+
+
+        };
+    }
+
+    let animationIndex = 0;
+
+    function animateChords() {
+        if (animating) {
+            svg.selectAll(".arc path")
+                .style("opacity", d => (d.index == animationIndex) ? 0.7 : 0.1);
+            svg.selectAll(".chord path")
+                .style("opacity", d => d.source.index !== animationIndex && d.target.index != animationIndex ? 0.1 : 0.7);
+            svg.selectAll("text")
+                .style("opacity", d => (d.index == animationIndex || data.matrix[animationIndex][d.index] > 0) ? 0.7 : 0.1);
+
+            animationIndex++;
+            if (animationIndex < data.matrix.length) {
+                window.setTimeout(animateChords, 400);
+            }
+        } else {
+            stopAnimation();
+        }
+
+
+    }
+
+    function stopAnimation() {
+        animating = false;
+        svg.selectAll(".arc path")
+            .style("opacity", 1);
+        svg.selectAll(".chord path")
+            .style("opacity", 1);
+        svg.selectAll("text")
+            .style("opacity", 1);
+    }
+
+
+    function createChordDiagram() {
+        let outerRadius = Math.min(width, height) * 0.46;
+        let innerRadius = outerRadius - 120;
+        let chord = d3.chord()
+            .padAngle(.03)
+            .sortSubgroups(d3.descending)
+            .sortChords(d3.descending);
+
+        let arc = d3.arc()
+            .innerRadius(innerRadius)
+            .outerRadius(innerRadius + 2);
+        // let outerArc = d3.arc()
+        //     .innerRadius(innerRadius + 3)
+        //     .outerRadius(innerRadius + 6);
+
+        let ribbon = d3.ribbon()
+            .radius(innerRadius);
+
+        svg = d3.select(document.getElementById('chord')).append("svg")
+            .attr("viewBox", [-width / 2, -height / 2, width, height])
+            .style("width", "100%")
+            .style("height", "auto");
+        const chords = chord(data.matrix);
+        svg.append("g")
+            .selectAll("g")
+            .data(chords.groups)
+            .join("g");
+
+        // group.append("path")
+        //     .attr("fill", d => color(data.names[d.index]))
+        //     .attr("stroke", d => color(data.names[d.index])).attr('d', outerArc);
+
+        group = svg.append("g").attr('class', 'arc')
+            .selectAll("g")
+            .data(chords.groups)
+            .join("g");
+
+        group.append("path")
+            .attr("fill", d => color(data.names[d.index]))
+            .attr("opacity", opacity)
+            .attr("stroke", d => color(data.names[d.index]))
+            .attr("d", arc).on("mouseover", fade(.1))
+            .on("mouseout", fade(1));
+
+        group.append("path")
+            .attr("fill", d => color(data.names[d.index]))
+            .attr("opacity", opacity)
+            .attr("stroke", d => color(data.names[d.index]))
+            .attr("d", arc).on("mouseover", fade(.1))
+            .on("mouseout", fade(1));
+
+
+        group.append("text")
+            .each(d => {
+                d.angle = (d.startAngle + d.endAngle) / 2;
+            })
+            .attr("dy", ".35em")
+            .attr("transform", d => `
+        rotate(${(d.angle * 180 / Math.PI - 90)})
+        translate(${innerRadius + 4})
+        ${d.angle > Math.PI ? "rotate(180)" : ""}
+      `)
+            .attr("text-anchor", d => d.angle > Math.PI ? "end" : null)
+            .text(d => data.names[d.index]);
+
+        svg.append("g").attr("class", "chord")
+            .selectAll("path")
+            .data(chords)
+            .join("path")
+            .attr("stroke", d => d3.rgb(color(data.names[d.source.index])).darker())
+            .attr("fill", d => color(data.names[d.source.index]))
+            .attr("opacity", opacity)
+            .attr("d", ribbon)
+            .on("mouseover", fadeChord(0.1, 0.1))
+            .on("mouseout", fadeChord(1, 1));
+    }
+
+
+</script>
+</body>
+</html>
+
+
+
