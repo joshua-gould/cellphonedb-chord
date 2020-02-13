@@ -115,7 +115,8 @@
                         let row = rowAndColumn[0];
                         let column = rowAndColumn[1];
                         ligandReceptors[headerNames[j].join('|')].push(pair);
-                        matrix[row][column] = value;
+                        // matrix[row][column] += 1;
+                        matrix[row][column] += value;
                     }
                 }
             }
