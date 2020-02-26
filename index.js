@@ -28,6 +28,7 @@ saveBtn.addEventListener('click', function (e) {
 
 function loadFile(f) {
     document.getElementById('chord').innerHTML = '';
+    document.getElementById('input-wrapper').style.minHeight = '';
     animateBtn.disabled = false;
     saveBtn.disabled = false;
     let reader = new FileReader();
