@@ -228,7 +228,7 @@ inputFile.addEventListener("change", function (event) {
 }, false);
 
 
-document.body.addEventListener('drop', function (event) {
+window.addEventListener('drop', function (event) {
     document.body.style.border = '';
     event.preventDefault();
     event.stopPropagation();
@@ -236,13 +236,13 @@ document.body.addEventListener('drop', function (event) {
     let files = dt.files;
     loadFile(files[0]);
 }, false);
-document.body.addEventListener('dragover', function (event) {
+window.addEventListener('dragover', function (event) {
     document.body.style.border = '2px solid black';
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 }, false);
-document.body.addEventListener('dragend', function (event) {
+window.addEventListener('dragend', function (event) {
     document.body.style.border = '';
 
 }, false);
