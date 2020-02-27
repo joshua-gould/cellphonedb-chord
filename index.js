@@ -50,13 +50,15 @@ function loadFile(f) {
         let header = lines[0].split(tab);
         let rankIndex = header.indexOf('rank');
         let interactingPairIndex = header.indexOf('interacting_pair');
+        let receptorIndexA = header.indexOf('receptor_a');
+
         // header names are pairs of clusters separated by |
         let nameToIndex = {};
         let numberOfClusters = 0;
-        let headerNames = [];
+        let clusterNames = [];
         for (let j = rankIndex + 1; j < header.length; j++) {
             let names = header[j].split('|');
-            headerNames.push(names);
+            clusterNames.push(names);
             names.forEach(name => {
                 let existingIndex = nameToIndex[name];
                 if (existingIndex === undefined) {
@@ -73,14 +75,7 @@ function loadFile(f) {
         for (let i = 0; i < numberOfClusters; i++) {
             matrix.push(new Float32Array(numberOfClusters));
         }
-        let rowAndColumns = [];
 
-        for (let i = 0; i < headerNames.length; i++) {
-            let headerName = headerNames[i];
-            let row = nameToIndex[headerName[0]];
-            let column = nameToIndex[headerName[1]];
-            rowAndColumns.push([row, column]);
-        }
 
         data.names = names;
         data.matrix = matrix; // name by name matrix
@@ -93,21 +88,30 @@ function loadFile(f) {
             let line = lines[i];
             let tokens = line.split(tab);
             let pair = tokens[interactingPairIndex];
-            for (let j = 0; j < headerNames.length; j++) {
+            for (let j = 0; j < clusterNames.length; j++) {
                 let value = parseFloat(tokens[j + rankIndex + 1]);
-
+                let clusters = clusterNames[j];
                 if (!isNaN(value) && value > 0) {
                     let ligandAndReceptor = pair.split('_');
-                    let ligand = ligandAndReceptor[0];
-                    let receptor = ligandAndReceptor[1];
+                    let isReceptorA = tokens[receptorIndexA].toLowerCase() == 'true';
+                    let ligand;
+                    let receptor;
+                    let ligandCluster;
+                    let receptorCluster;
 
-                    let rowAndColumn = rowAndColumns[j];
-                    let row = rowAndColumn[0];
-                    let column = rowAndColumn[1];
-                    let ligandCluster = names[row];
-                    let receptorCluster = names[column];
+                    if (isReceptorA) {
+                        ligand = ligandAndReceptor[1];
+                        receptor = ligandAndReceptor[0];
+                        ligandCluster = clusters[1];
+                        receptorCluster = clusters[0];
+                    } else {
+                        ligand = ligandAndReceptor[0];
+                        receptor = ligandAndReceptor[1];
+                        ligandCluster = clusters[0];
+                        receptorCluster = clusters[1];
+                    }
 
-                    matrix[row][column] += 1;
+                    matrix[nameToIndex[ligandCluster]][nameToIndex[receptorCluster]] += 1;
                     let rowKey = ligand + ',' + ligandCluster;
                     let columnKey = receptor + ',' + receptorCluster;
                     let rowIndex = rowToIndex.get(rowKey);
