@@ -148,13 +148,13 @@ function loadFile(f) {
             partnerTwoClusterVector.setValue(index, key[1]);
         }
         let partnerOneClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneClusterVector);
-        let partnerTwoClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerTwoClusterVector);
+        let partnerTwoClusterToColumnIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerTwoClusterVector);
         data.dataset = dataset;
         data.partnerOneClusterToRowIndices = partnerOneClusterToRowIndices;
-        data.partnerTwoClusterToRowIndices = partnerTwoClusterToRowIndices;
+        data.partnerTwoClusterToColumnIndices = partnerTwoClusterToColumnIndices;
 
         let partnerOneToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneVector);
-        let numSignificantVector = dataset.getRowMetadata().add('total interactions for source partner');
+        let numSignificantVector = dataset.getRowMetadata().add('total interactions for partner');
         partnerOneToRowIndices.forEach((rowIndices, partnerOne) => {
             let slicedDataset = new morpheus.SlicedDatasetView(dataset, rowIndices, null);
             let count = 0;
@@ -291,7 +291,7 @@ function saveSvg(svgEl, name) {
     document.body.removeChild(downloadLink);
 }
 
-let selectedpartnerOnes = new Set();
+let selectedClusters = new Set();
 
 function fade(opacity) {
     return function (g, i) {
@@ -306,12 +306,15 @@ function fade(opacity) {
 
 function updateHeatmap() {
     let rowIndices = [];
-    selectedpartnerOnes.forEach(value => {
+    let columnIndices = [];
+    selectedClusters.forEach(value => {
         rowIndices = rowIndices.concat(data.partnerOneClusterToRowIndices.get(value));
+        columnIndices = columnIndices.concat(data.partnerTwoClusterToColumnIndices.get(value));
+
     });
 
     let dataset = data.dataset;
-    let filteredRowIndices = [];
+    let filteredRowIndices = new Set();
     for (let i = 0; i < rowIndices.length; i++) {
         let passes = false;
         for (let j = 0; j < dataset.getColumnCount(); j++) {
@@ -321,11 +324,23 @@ function updateHeatmap() {
             }
         }
         if (passes) {
-            filteredRowIndices.push(rowIndices[i]);
+            filteredRowIndices.add(rowIndices[i]);
         }
     }
-    let datasetView = new morpheus.SlicedDatasetView(dataset, filteredRowIndices, null);
-    let columnIndices = [];
+    for (let i = 0; i < dataset.getRowCount(); i++) {
+        let passes = false;
+        for (let j = 0; j < columnIndices.length; j++) {
+            if (!isNaN(dataset.getValue(i, columnIndices[j]))) {
+                passes = true;
+                break;
+            }
+        }
+        if (passes) {
+            filteredRowIndices.add(i);
+        }
+    }
+    let datasetView = new morpheus.SlicedDatasetView(dataset, Array.from(filteredRowIndices), null);
+    let filteredColumnIndices = [];
     for (let j = 0; j < datasetView.getColumnCount(); j++) {
         let passes = false;
         for (let i = 0; i < datasetView.getRowCount(); i++) {
@@ -335,22 +350,22 @@ function updateHeatmap() {
             }
         }
         if (passes) {
-            columnIndices.push(j);
+            filteredColumnIndices.push(j);
         }
     }
-    datasetView = new morpheus.SlicedDatasetView(datasetView, null, columnIndices);
+    datasetView = new morpheus.SlicedDatasetView(datasetView, null, filteredColumnIndices);
     heatmap.getProject().setFullDataset(datasetView, true);
     heatmap.revalidate();
 }
 
 function togglepartnerOne() {
     return function (g, i) {
-        selectedpartnerOnes.clear();
+        selectedClusters.clear();
         let partnerOneCluster = data.names[g.index];
-        if (selectedpartnerOnes.has(partnerOneCluster)) {
-            selectedpartnerOnes.delete(partnerOneCluster);
+        if (selectedClusters.has(partnerOneCluster)) {
+            selectedClusters.delete(partnerOneCluster);
         } else {
-            selectedpartnerOnes.add(partnerOneCluster);
+            selectedClusters.add(partnerOneCluster);
         }
         updateHeatmap();
     };
@@ -361,7 +376,7 @@ function getInteractionTable(html, sourceIndex, targetIndex) {
     let partnerTwoCluster = data.names[targetIndex];
     let dataset = data.dataset;
     let rowIndices = data.partnerOneClusterToRowIndices.get(partnerOneCluster);
-    let columnIndices = data.partnerTwoClusterToRowIndices.get(partnerTwoCluster);
+    let columnIndices = data.partnerTwoClusterToColumnIndices.get(partnerTwoCluster);
     let partnerOneVector = dataset.getRowMetadata().getByName('partner_one');
     let partnerTwoVector = dataset.getColumnMetadata().getByName('partner_two');
     html.push('<table>');
