@@ -51,7 +51,6 @@ function loadFile(f) {
         let header = lines[0].split(tab);
         let rankIndex = header.indexOf('rank');
         let interactingPairIndex = header.indexOf('interacting_pair');
-        let receptorIndexA = header.indexOf('receptor_a');
 
         // header names are pairs of clusters separated by |
         let nameToIndex = {};
@@ -81,7 +80,7 @@ function loadFile(f) {
         data.names = names;
         data.matrix = matrix; // name by name matrix
 
-        let fullMatrix = []; // ligand gene + ligand cluster on rows, receptor gene + receptor cluster on columns
+        let fullMatrix = []; // partnerOne gene + partnerOne cluster on rows, partnerTwo gene + partnerTwo cluster on columns
         let rowToIndex = new Map();
         let columnToIndex = new Map();
         let maxValue = -Number.MAX_VALUE;
@@ -92,29 +91,18 @@ function loadFile(f) {
             for (let j = 0; j < clusterNames.length; j++) {
                 let value = parseFloat(tokens[j + rankIndex + 1]);
                 let clusters = clusterNames[j];
-                if (!isNaN(value) && value > 0) {
-                    let ligandAndReceptor = pair.split('_');
-                    let isReceptorA = tokens[receptorIndexA].toLowerCase() == 'true';
-                    let ligand;
-                    let receptor;
-                    let ligandCluster;
-                    let receptorCluster;
+                if (!isNaN(value)) {
+                    let partners = pair.split('_');
+                    let partnerOne = partners[0];
+                    let partnerOneCluster = clusters[0];
+                    let partnerTwo = partners[1];
+                    let partnerTwoCluster = clusters[1];
+                    let partnerOneIndex = nameToIndex[partnerOneCluster];
+                    let partnerTwoIndex = nameToIndex[partnerTwoCluster];
+                    matrix[partnerOneIndex][partnerTwoIndex] += 1;
 
-                    if (isReceptorA) {
-                        ligand = ligandAndReceptor[1];
-                        receptor = ligandAndReceptor[0];
-                        ligandCluster = clusters[1];
-                        receptorCluster = clusters[0];
-                    } else {
-                        ligand = ligandAndReceptor[0];
-                        receptor = ligandAndReceptor[1];
-                        ligandCluster = clusters[0];
-                        receptorCluster = clusters[1];
-                    }
-
-                    matrix[nameToIndex[ligandCluster]][nameToIndex[receptorCluster]] += 1;
-                    let rowKey = ligand + ',' + ligandCluster;
-                    let columnKey = receptor + ',' + receptorCluster;
+                    let rowKey = partnerOne + ',' + partnerOneCluster;
+                    let columnKey = partnerTwo + ',' + partnerTwoCluster;
                     let rowIndex = rowToIndex.get(rowKey);
                     if (rowIndex === undefined) {
                         rowIndex = rowToIndex.size;
@@ -145,29 +133,29 @@ function loadFile(f) {
         });
 
 
-        let ligandVector = dataset.getRowMetadata().add('ligand');
-        let ligandClusterVector = dataset.getRowMetadata().add('cluster');
+        let partnerOneVector = dataset.getRowMetadata().add('partner_one');
+        let partnerOneClusterVector = dataset.getRowMetadata().add('cluster');
         for (let [key, index] of rowToIndex) {
             key = key.split(',');
-            ligandVector.setValue(index, key[0]);
-            ligandClusterVector.setValue(index, key[1]);
+            partnerOneVector.setValue(index, key[0]);
+            partnerOneClusterVector.setValue(index, key[1]);
         }
-        let receptorVector = dataset.getColumnMetadata().add('receptor');
-        let receptorClusterVector = dataset.getColumnMetadata().add('cluster');
+        let partnerTwoVector = dataset.getColumnMetadata().add('partner_two');
+        let partnerTwoClusterVector = dataset.getColumnMetadata().add('cluster');
         for (let [key, index] of columnToIndex) {
             key = key.split(',');
-            receptorVector.setValue(index, key[0]);
-            receptorClusterVector.setValue(index, key[1]);
+            partnerTwoVector.setValue(index, key[0]);
+            partnerTwoClusterVector.setValue(index, key[1]);
         }
-        let ligandClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(ligandClusterVector);
-        let receptorClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(receptorClusterVector);
+        let partnerOneClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneClusterVector);
+        let partnerTwoClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerTwoClusterVector);
         data.dataset = dataset;
-        data.ligandClusterToRowIndices = ligandClusterToRowIndices;
-        data.receptorClusterToRowIndices = receptorClusterToRowIndices;
+        data.partnerOneClusterToRowIndices = partnerOneClusterToRowIndices;
+        data.partnerTwoClusterToRowIndices = partnerTwoClusterToRowIndices;
 
-        let ligandToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(ligandVector);
-        let numSignificantVector = dataset.getRowMetadata().add('interactions by gene');
-        ligandToRowIndices.forEach((rowIndices, ligand) => {
+        let partnerOneToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneVector);
+        let numSignificantVector = dataset.getRowMetadata().add('total interactions for source partner');
+        partnerOneToRowIndices.forEach((rowIndices, partnerOne) => {
             let slicedDataset = new morpheus.SlicedDatasetView(dataset, rowIndices, null);
             let count = 0;
             for (let i = 0; i < slicedDataset.getRowCount(); i++) {
@@ -200,7 +188,7 @@ function loadFile(f) {
                 heatmap.project.columnColorModel = heatmap.project.getRowColorModel();
                 data.names.forEach(name => {
                     let c = colorScale(name);
-                    colorModel.setMappedValue(ligandClusterVector, name, c);
+                    colorModel.setMappedValue(partnerOneClusterVector, name, c);
                 });
             },
 
@@ -211,7 +199,7 @@ function loadFile(f) {
                     order: 0
                 },
                 {
-                    field: 'ligand',
+                    field: 'partner_one',
                     type: 'annotation',
                     order: 0,
                 }],
@@ -222,7 +210,7 @@ function loadFile(f) {
                     type: 'annotation',
                     order: 0
                 }, {
-                    field: 'receptor',
+                    field: 'partner_two',
                     type: 'annotation',
                     order: 0,
 
@@ -233,7 +221,7 @@ function loadFile(f) {
                     display: ['text', 'color'],
                     highlightMatchingValues: true
                 }, {
-                    field: 'ligand',
+                    field: 'partner_one',
                     display: ['text'],
                     highlightMatchingValues: true
                 }, {
@@ -243,7 +231,7 @@ function loadFile(f) {
                 }],
             columns: [
                 {
-                    field: 'receptor',
+                    field: 'partner_two',
                     display: ['text'],
                     highlightMatchingValues: true
                 }, {
@@ -303,7 +291,7 @@ function saveSvg(svgEl, name) {
     document.body.removeChild(downloadLink);
 }
 
-let selectedLigands = new Set();
+let selectedpartnerOnes = new Set();
 
 function fade(opacity) {
     return function (g, i) {
@@ -318,8 +306,8 @@ function fade(opacity) {
 
 function updateHeatmap() {
     let rowIndices = [];
-    selectedLigands.forEach(value => {
-        rowIndices = rowIndices.concat(data.ligandClusterToRowIndices.get(value));
+    selectedpartnerOnes.forEach(value => {
+        rowIndices = rowIndices.concat(data.partnerOneClusterToRowIndices.get(value));
     });
 
     let dataset = data.dataset;
@@ -355,60 +343,68 @@ function updateHeatmap() {
     heatmap.revalidate();
 }
 
-function toggleLigand() {
+function togglepartnerOne() {
     return function (g, i) {
-        selectedLigands.clear();
-        let ligandCluster = data.names[g.index];
-        if (selectedLigands.has(ligandCluster)) {
-            selectedLigands.delete(ligandCluster);
+        selectedpartnerOnes.clear();
+        let partnerOneCluster = data.names[g.index];
+        if (selectedpartnerOnes.has(partnerOneCluster)) {
+            selectedpartnerOnes.delete(partnerOneCluster);
         } else {
-            selectedLigands.add(ligandCluster);
+            selectedpartnerOnes.add(partnerOneCluster);
         }
         updateHeatmap();
     };
 }
 
+function getInteractionTable(html, sourceIndex, targetIndex) {
+    let partnerOneCluster = data.names[sourceIndex];
+    let partnerTwoCluster = data.names[targetIndex];
+    let dataset = data.dataset;
+    let rowIndices = data.partnerOneClusterToRowIndices.get(partnerOneCluster);
+    let columnIndices = data.partnerTwoClusterToRowIndices.get(partnerTwoCluster);
+    let partnerOneVector = dataset.getRowMetadata().getByName('partner_one');
+    let partnerTwoVector = dataset.getColumnMetadata().getByName('partner_two');
+    html.push('<table>');
+    html.push('<tr>');
+    html.push('<th>');
+    html.push(partnerOneCluster);
+    html.push('</th>');
+    html.push('<th>');
+    html.push(partnerTwoCluster);
+    html.push('</th>');
+    html.push('<th></th>');
+    html.push('</tr>');
+    let count = 0;
+    for (let i = 0; i < rowIndices.length; i++) {
+        for (let j = 0; j < columnIndices.length; j++) {
+            let value = dataset.getValue(rowIndices[i], columnIndices[j]);
+            if (!isNaN(value)) {
+                count++;
+                html.push('<tr>');
+                html.push('<td>');
+                html.push(partnerOneVector.getValue(rowIndices[i]));
+                html.push('</td>');
+                html.push('<td>');
+                html.push(partnerTwoVector.getValue(columnIndices[j]));
+                html.push('</td>');
+                html.push('<td>');
+                html.push(value);
+                html.push('</td>');
+                html.push('</tr>');
+            }
+        }
+    }
+    html.push('</table>');
+}
+
 function fadeChord(opacityArcs, opacityChords, isSelected) {
     return function (g, i) {
         if (isSelected) {
-            let ligandCluster = data.names[g.source.index];
-            let receptorCluster = data.names[g.target.index];
-            let dataset = data.dataset;
-            let rowIndices = data.ligandClusterToRowIndices.get(ligandCluster);
-            let columnIndices = data.receptorClusterToRowIndices.get(receptorCluster);
-            let ligandVector = dataset.getRowMetadata().getByName('ligand');
-            let receptorVector = dataset.getColumnMetadata().getByName('receptor');
-            let html = ['<table>'];
-            html.push('<tr>');
-            html.push('<th>');
-            html.push('Ligand<br/>' + ligandCluster);
-            html.push('</th>');
-            html.push('<th>');
-            html.push('Receptor<br/>' + receptorCluster);
-            html.push('</th>');
-            html.push('<th></th>');
-            html.push('</tr>');
-            let count = 0;
-            for (let i = 0; i < rowIndices.length; i++) {
-                for (let j = 0; j < columnIndices.length; j++) {
-                    let value = dataset.getValue(rowIndices[i], columnIndices[j]);
-                    if (!isNaN(value)) {
-                        count++;
-                        html.push('<tr>');
-                        html.push('<td>');
-                        html.push(ligandVector.getValue(rowIndices[i]));
-                        html.push('</td>');
-                        html.push('<td>');
-                        html.push(receptorVector.getValue(columnIndices[j]));
-                        html.push('</td>');
-                        html.push('<td>');
-                        html.push(value);
-                        html.push('</td>');
-                        html.push('</tr>');
-                    }
-                }
-            }
-            html.push('</table>');
+            let html = [];
+            getInteractionTable(html, g.source.index, g.target.index);
+            html.push('<br/>');
+            getInteractionTable(html, g.target.index, g.source.index);
+
 
             tooltip.html(html.join(''))
                 .style("left", (d3.event.pageX) + "px")
@@ -508,7 +504,7 @@ function createChordDiagram() {
         .attr("opacity", opacity)
         .attr("stroke", d => colorScale(data.names[d.index]))
         .attr("d", arc).on("mouseover", fade(.1))
-        .on("mouseout", fade(1)).on('click', toggleLigand());
+        .on("mouseout", fade(1)).on('click', togglepartnerOne());
 
 
     group.append("text")
