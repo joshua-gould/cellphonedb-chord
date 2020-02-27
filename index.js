@@ -159,11 +159,24 @@ function loadFile(f) {
         data.dataset = dataset;
         data.ligandClusterToRowIndices = ligandClusterToRowIndices;
         data.receptorClusterToRowIndices = receptorClusterToRowIndices;
-        // columnGroupBy: [
-        //     {
-        //         field: 'gene',
-        //         type: 'annotation'
-        //     }],
+
+        let ligandToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(ligandVector);
+        let numSignificantVector = dataset.getRowMetadata().add('# significant per gene');
+        ligandToRowIndices.forEach((rowIndices, ligand) => {
+            let slicedDataset = new morpheus.SlicedDatasetView(dataset, rowIndices, null);
+            let count = 0;
+            for (let i = 0; i < slicedDataset.getRowCount(); i++) {
+                for (let j = 0; j < slicedDataset.getColumnCount(); j++) {
+                    if (!isNaN(slicedDataset.getValue(i, j))) {
+                        count++;
+                    }
+                }
+            }
+
+            for (let i = 0; i < rowIndices.length; i++) {
+                numSignificantVector.setValue(rowIndices[i], count);
+            }
+        });
         new morpheus.HeatMap({
             dataset: dataset,
             el: '#heatmap',
@@ -218,6 +231,10 @@ function loadFile(f) {
                     field: 'ligand',
                     display: ['text'],
                     highlightMatchingValues: true
+                }, {
+                    field: numSignificantVector.getName(),
+                    display: ['text'],
+                    formatter: '.0f'
                 }],
             columns: [
                 {
