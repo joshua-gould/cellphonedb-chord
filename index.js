@@ -288,10 +288,19 @@ function fadeChord(opacityArcs, opacityChords, isSelected) {
             let receptorCluster = data.names[g.target.index];
             let dataset = data.dataset;
             let rowIndices = data.ligandClusterToRowIndices.get(ligandCluster);
-            let columnIndices = data.receptorClusterToRowIndices.get(ligandCluster);
+            let columnIndices = data.receptorClusterToRowIndices.get(receptorCluster);
             let ligandVector = dataset.getRowMetadata().getByName('ligand');
             let receptorVector = dataset.getColumnMetadata().getByName('receptor');
             let html = ['<table>'];
+            html.push('<tr>');
+            html.push('<th>');
+            html.push('Ligand<br/>' + ligandCluster);
+            html.push('</th>');
+            html.push('<th>');
+            html.push('Receptor<br/>' + receptorCluster);
+            html.push('</th>');
+            html.push('<th></th>');
+            html.push('</tr>');
             let count = 0;
             for (let i = 0; i < rowIndices.length; i++) {
                 for (let j = 0; j < columnIndices.length; j++) {
@@ -314,8 +323,7 @@ function fadeChord(opacityArcs, opacityChords, isSelected) {
             }
             html.push('</table>');
 
-
-            tooltip.html(ligandCluster + ' - ' + receptorCluster + ' (' + count + ')<br>' + html.join(''))
+            tooltip.html(html.join(''))
                 .style("left", (d3.event.pageX) + "px")
                 .style("top", (d3.event.pageY - 28) + "px");
         } else {
