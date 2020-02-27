@@ -36,6 +36,7 @@ let colorScale = d3.scaleOrdinal([
     '#bd9e39', '#e7ba52', '#e7cb94', '#843c39', '#ad494a', '#d6616b',
     '#e7969c', '#7b4173', '#a55194', '#ce6dbd', '#de9ed6']);
 let opacity = 0.7;
+let heatmap = null;
 
 function loadFile(f) {
     document.getElementById('chord').innerHTML = '';
@@ -165,7 +166,7 @@ function loadFile(f) {
         data.receptorClusterToRowIndices = receptorClusterToRowIndices;
 
         let ligandToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(ligandVector);
-        let numSignificantVector = dataset.getRowMetadata().add('# significant per gene');
+        let numSignificantVector = dataset.getRowMetadata().add('interactions by gene');
         ligandToRowIndices.forEach((rowIndices, ligand) => {
             let slicedDataset = new morpheus.SlicedDatasetView(dataset, rowIndices, null);
             let count = 0;
@@ -181,7 +182,7 @@ function loadFile(f) {
                 numSignificantVector.setValue(rowIndices[i], count);
             }
         });
-        new morpheus.HeatMap({
+        heatmap = new morpheus.HeatMap({
             dataset: dataset,
             el: '#heatmap',
             height: 500,
@@ -302,6 +303,7 @@ function saveSvg(svgEl, name) {
     document.body.removeChild(downloadLink);
 }
 
+let selectedLigands = new Set();
 
 function fade(opacity) {
     return function (g, i) {
@@ -314,6 +316,57 @@ function fade(opacity) {
     };
 }
 
+function updateHeatmap() {
+    let rowIndices = [];
+    selectedLigands.forEach(value => {
+        rowIndices = rowIndices.concat(data.ligandClusterToRowIndices.get(value));
+    });
+
+    let dataset = data.dataset;
+    let filteredRowIndices = [];
+    for (let i = 0; i < rowIndices.length; i++) {
+        let passes = false;
+        for (let j = 0; j < dataset.getColumnCount(); j++) {
+            if (!isNaN(dataset.getValue(rowIndices[i], j))) {
+                passes = true;
+                break;
+            }
+        }
+        if (passes) {
+            filteredRowIndices.push(rowIndices[i]);
+        }
+    }
+    let datasetView = new morpheus.SlicedDatasetView(dataset, filteredRowIndices, null);
+    let columnIndices = [];
+    for (let j = 0; j < datasetView.getColumnCount(); j++) {
+        let passes = false;
+        for (let i = 0; i < datasetView.getRowCount(); i++) {
+            if (!isNaN(datasetView.getValue(i, j))) {
+                passes = true;
+                break;
+            }
+        }
+        if (passes) {
+            columnIndices.push(j);
+        }
+    }
+    datasetView = new morpheus.SlicedDatasetView(datasetView, null, columnIndices);
+    heatmap.getProject().setFullDataset(datasetView, true);
+    heatmap.revalidate();
+}
+
+function toggleLigand() {
+    return function (g, i) {
+        selectedLigands.clear();
+        let ligandCluster = data.names[g.index];
+        if (selectedLigands.has(ligandCluster)) {
+            selectedLigands.delete(ligandCluster);
+        } else {
+            selectedLigands.add(ligandCluster);
+        }
+        updateHeatmap();
+    };
+}
 
 function fadeChord(opacityArcs, opacityChords, isSelected) {
     return function (g, i) {
@@ -450,11 +503,12 @@ function createChordDiagram() {
         .join("g");
 
     group.append("path")
+        .attr("class", "outer")
         .attr("fill", d => colorScale(data.names[d.index]))
         .attr("opacity", opacity)
         .attr("stroke", d => colorScale(data.names[d.index]))
         .attr("d", arc).on("mouseover", fade(.1))
-        .on("mouseout", fade(1));
+        .on("mouseout", fade(1)).on('click', toggleLigand());
 
 
     group.append("text")
