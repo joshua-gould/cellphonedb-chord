@@ -26,6 +26,17 @@ saveBtn.addEventListener('click', function (e) {
     saveSvg(svg.node(), 'chord.svg');
 });
 
+let colorScale = d3.scaleOrdinal([
+    '#1f77b4', '#aec7e8', '#ff7f0e',
+    '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd',
+    '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
+    '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5',
+    '#393b79', '#5254a3', '#6b6ecf',
+    '#9c9ede', '#637939', '#8ca252', '#b5cf6b', '#cedb9c', '#8c6d31',
+    '#bd9e39', '#e7ba52', '#e7cb94', '#843c39', '#ad494a', '#d6616b',
+    '#e7969c', '#7b4173', '#a55194', '#ce6dbd', '#de9ed6']);
+let opacity = 0.7;
+
 function loadFile(f) {
     document.getElementById('chord').innerHTML = '';
     document.getElementById('input-wrapper').style.minHeight = '';
@@ -166,6 +177,14 @@ function loadFile(f) {
                 values: [0, Math.ceil(maxValue)],
                 colors: ['white', 'red']
             },
+            renderReady: function (heatmap) {
+                let colorModel = heatmap.project.getRowColorModel();
+                heatmap.project.columnColorModel = heatmap.project.getRowColorModel();
+                data.names.forEach(name => {
+                    let c = colorScale(name);
+                    colorModel.setMappedValue(ligandClusterVector, name, c);
+                });
+            },
 
             rowSortBy: [
                 {
@@ -262,12 +281,6 @@ function saveSvg(svgEl, name) {
     document.body.removeChild(downloadLink);
 }
 
-let color = d3.scaleOrdinal([
-    '#1f77b4', '#aec7e8', '#ff7f0e',
-    '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd',
-    '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
-    '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5']);
-let opacity = 0.7;
 
 function fade(opacity) {
     return function (g, i) {
@@ -407,8 +420,8 @@ function createChordDiagram() {
         .join("g");
 
     // group.append("path")
-    //     .attr("fill", d => color(data.names[d.index]))
-    //     .attr("stroke", d => color(data.names[d.index])).attr('d', outerArc);
+    //     .attr("fill", d => colorScale(data.names[d.index]))
+    //     .attr("stroke", d => colorScale(data.names[d.index])).attr('d', outerArc);
 
     group = svg.append("g").attr('class', 'arc')
         .selectAll("g")
@@ -416,9 +429,9 @@ function createChordDiagram() {
         .join("g");
 
     group.append("path")
-        .attr("fill", d => color(data.names[d.index]))
+        .attr("fill", d => colorScale(data.names[d.index]))
         .attr("opacity", opacity)
-        .attr("stroke", d => color(data.names[d.index]))
+        .attr("stroke", d => colorScale(data.names[d.index]))
         .attr("d", arc).on("mouseover", fade(.1))
         .on("mouseout", fade(1));
 
@@ -440,8 +453,8 @@ function createChordDiagram() {
         .selectAll("path")
         .data(chords)
         .join("path")
-        .attr("stroke", d => d3.rgb(color(data.names[d.source.index])).darker())
-        .attr("fill", d => color(data.names[d.source.index]))
+        .attr("stroke", d => d3.rgb(colorScale(data.names[d.source.index])).darker())
+        .attr("fill", d => colorScale(data.names[d.source.index]))
         .attr("opacity", opacity)
         .attr("d", ribbon)
         .on("mouseover", fadeChord(0.1, 0.1, true))
