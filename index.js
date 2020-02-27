@@ -153,23 +153,38 @@ function loadFile(f) {
         data.partnerOneClusterToRowIndices = partnerOneClusterToRowIndices;
         data.partnerTwoClusterToColumnIndices = partnerTwoClusterToColumnIndices;
 
-        let partnerOneToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneVector);
-        let numSignificantVector = dataset.getRowMetadata().add('total interactions for partner');
-        partnerOneToRowIndices.forEach((rowIndices, partnerOne) => {
-            let slicedDataset = new morpheus.SlicedDatasetView(dataset, rowIndices, null);
-            let count = 0;
-            for (let i = 0; i < slicedDataset.getRowCount(); i++) {
-                for (let j = 0; j < slicedDataset.getColumnCount(); j++) {
-                    if (!isNaN(slicedDataset.getValue(i, j))) {
-                        count++;
+
+        let geneToCount = {};
+        for (let i = 0; i < dataset.getRowCount(); i++) {
+            for (let j = 0; j < dataset.getColumnCount(); j++) {
+                if (!isNaN(dataset.getValue(i, j))) {
+                    let gene1 = partnerOneVector.getValue(i);
+                    let gene2 = partnerTwoVector.getValue(j);
+                    let prior = geneToCount[gene1];
+                    if (prior === undefined) {
+                        prior = 0;
+                    }
+                    geneToCount[gene1] = prior + 1;
+                    if (gene1 !== gene2) {
+                        let prior = geneToCount[gene2];
+                        if (prior === undefined) {
+                            prior = 0;
+                        }
+                        geneToCount[gene2] = prior + 1;
                     }
                 }
             }
+        }
 
-            for (let i = 0; i < rowIndices.length; i++) {
-                numSignificantVector.setValue(rowIndices[i], count);
-            }
-        });
+        let numSignificantVectorOne = dataset.getRowMetadata().add('total interactions for partner');
+        let numSignificantVectorTwo = dataset.getColumnMetadata().add('total interactions for partner');
+        for (let i = 0; i < numSignificantVectorOne.size(); i++) {
+            numSignificantVectorOne.setValue(i, geneToCount[partnerOneVector.getValue(i)]);
+        }
+        for (let i = 0; i < numSignificantVectorTwo.size(); i++) {
+            numSignificantVectorTwo.setValue(i, geneToCount[partnerTwoVector.getValue(i)]);
+        }
+
         heatmap = new morpheus.HeatMap({
             dataset: dataset,
             el: '#heatmap',
@@ -225,11 +240,16 @@ function loadFile(f) {
                     display: ['text'],
                     highlightMatchingValues: true
                 }, {
-                    field: numSignificantVector.getName(),
+                    field: numSignificantVectorOne.getName(),
                     display: ['text'],
                     formatter: '.0f'
                 }],
             columns: [
+                {
+                    field: numSignificantVectorTwo.getName(),
+                    display: ['text'],
+                    formatter: '.0f'
+                },
                 {
                     field: 'partner_two',
                     display: ['text'],
