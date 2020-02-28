@@ -2,8 +2,12 @@ let animateBtn = document.getElementById('animate');
 let tooltip = d3.select('#tooltip');
 let saveBtn = document.getElementById('save');
 let svg = null;
-let width = 450;
-let height = width;
+let margin = {left: 150, top: 150, right: 150, bottom: 150};
+let width = Math.min(window.innerWidth, 750) - margin.left - margin.right;
+let height = Math.min(window.innerWidth, 750) - margin.top - margin.bottom;
+let innerRadius = Math.min(width, height) * .55;
+let outerRadius = innerRadius + 6;
+let table = null;
 let data = {matrix: [], names: []};
 let dataArray = null;
 let animating = false;
@@ -129,6 +133,7 @@ function loadFile(f) {
         createChordDiagram();
         $('#details').dataTable({
             "data": dataArray,
+            destroy: true,
             scroller: true,
             scrollY: 500,
             "order": [[1, "asc"]],
@@ -296,64 +301,25 @@ function stopAnimation() {
 
 
 function createChordDiagram() {
-    let outerRadius = Math.min(width, height) * 0.46;
-    let innerRadius = outerRadius - 120;
-    let chord = d3.chord()
+
+    const chord = d3.chord()
         .padAngle(.03)
         .sortSubgroups(d3.descending)
         .sortChords(d3.descending);
 
-    let arc = d3.arc()
+    const arc = d3.arc()
         .innerRadius(innerRadius)
-        .outerRadius(innerRadius + 2);
-    // let outerArc = d3.arc()
-    //     .innerRadius(innerRadius + 3)
-    //     .outerRadius(innerRadius + 6);
+        .outerRadius(outerRadius);
 
-    let ribbon = d3.ribbon()
+    const ribbon = d3.ribbon()
         .radius(innerRadius);
-
-    svg = d3.select(document.getElementById('chord')).append("svg")
-        .attr("viewBox", [-width / 2, -height / 2, width, height])
-        .style("width", "100%")
-        .style("height", "auto");
     const chords = chord(data.matrix);
-    svg.append("g")
-        .selectAll("g")
-        .data(chords.groups)
-        .join("g");
 
-    // group.append("path")
-    //     .attr("fill", d => colorScale(data.names[d.index]))
-    //     .attr("stroke", d => colorScale(data.names[d.index])).attr('d', outerArc);
-
-    group = svg.append("g").attr('class', 'arc')
-        .selectAll("g")
-        .data(chords.groups)
-        .join("g");
-
-    group.append("path")
-        .attr("class", "outer")
-        .attr("fill", d => colorScale(d.index))
-        .attr("opacity", opacity)
-        .attr("stroke", d => colorScale(d.index))
-        .attr("d", arc).on("mouseover", fade(.1))
-        .on("mouseout", fade(opacity));
-
-
-    group.append("text")
-        .each(d => {
-            d.angle = (d.startAngle + d.endAngle) / 2;
-        })
-        .attr("dy", ".35em")
-        .attr("transform", d => `
-        rotate(${(d.angle * 180 / Math.PI - 90)})
-        translate(${innerRadius + 4})
-        ${d.angle > Math.PI ? "rotate(180)" : ""}
-      `)
-        .attr("text-anchor", d => d.angle > Math.PI ? "end" : null)
-        .text(d => data.names[d.index]);
-
+    svg = d3.select("#chord").append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", "translate(" + (width / 2 + margin.left) + "," + (height / 2 + margin.top) + ")");
     //Create a gradient definition for each chord
     var grads = svg.append("defs").selectAll("linearGradient")
         .data(chords)
@@ -362,11 +328,8 @@ function createChordDiagram() {
         .attr("id", function (d) {
             return "chordGradient-" + d.source.index + "-" + d.target.index;
         })
-        //Instead of the object bounding box, use the entire SVG for setting locations
-        //in pixel locations instead of percentages (which is more typical)
         .attr("gradientUnits", "userSpaceOnUse")
         //The full mathematical formula to find the x and y locations
-        //of the Avenger's source chord
         .attr("x1", function (d, i) {
             return innerRadius * Math.cos((d.source.endAngle - d.source.startAngle) / 2 +
                 d.source.startAngle - Math.PI / 2);
@@ -389,13 +352,45 @@ function createChordDiagram() {
         .attr("stop-color", function (d) {
             return colorScale(d.source.index);
         });
-
-//Set the ending color (at 100%)
     grads.append("stop")
         .attr("offset", "100%")
         .attr("stop-color", function (d) {
             return colorScale(d.target.index);
         });
+
+    let group = svg.append("g").attr('class', 'arc')
+        .selectAll("g")
+        .data(chords.groups)
+        .join("g");
+
+    group.append("path")
+        .attr("class", "outer")
+        .attr("fill", d => colorScale(d.index))
+        .attr("opacity", opacity)
+        .attr("stroke", d => colorScale(d.index))
+        .attr("d", arc).on("mouseover", fade(.1))
+        .on("mouseout", fade(opacity));
+
+
+    group.append("text")
+        .each(function (d) {
+            d.angle = (d.startAngle + d.endAngle) / 2;
+        })
+        .attr("dy", ".35em")
+        .attr("class", "titles")
+        .attr("text-anchor", function (d) {
+            return d.angle > Math.PI ? "end" : null;
+        })
+        .attr("transform", function (d) {
+            return "rotate(" + (d.angle * 180 / Math.PI - 90) + ")"
+                + "translate(" + (outerRadius + 3) + ")"
+                + (d.angle > Math.PI ? "rotate(180)" : "");
+        })
+        .text(function (d, i) {
+            return data.names[i];
+        });
+
+
     svg.append("g").attr("class", "chord")
         .selectAll("path")
         .data(chords)
