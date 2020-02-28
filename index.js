@@ -5,7 +5,10 @@ let svg = null;
 let width = 450;
 let height = width;
 let data = {matrix: [], names: []};
+let dataArray = null;
 let animating = false;
+let opacity = 0.7;
+let fadedOpacity = 0.1;
 
 function startAnimation() {
     animating = true;
@@ -35,8 +38,7 @@ let colorScale = d3.scaleOrdinal([
     '#9c9ede', '#637939', '#8ca252', '#b5cf6b', '#cedb9c', '#8c6d31',
     '#bd9e39', '#e7ba52', '#e7cb94', '#843c39', '#ad494a', '#d6616b',
     '#e7969c', '#7b4173', '#a55194', '#ce6dbd', '#de9ed6']);
-let opacity = 0.7;
-let heatmap = null;
+
 
 function loadFile(f) {
     document.getElementById('chord').innerHTML = '';
@@ -51,6 +53,11 @@ function loadFile(f) {
         let header = lines[0].split(tab);
         let rankIndex = header.indexOf('rank');
         let interactingPairIndex = header.indexOf('interacting_pair');
+        let secretedIndex = header.indexOf('secreted');
+        let integrinIndex = header.indexOf('is_integrin');
+        if (rankIndex === -1 || interactingPairIndex === -1 || secretedIndex === -1 || integrinIndex === -1) {
+            throw 'Error parsing file';
+        }
 
         // header names are pairs of clusters separated by |
         let nameToIndex = {};
@@ -80,188 +87,59 @@ function loadFile(f) {
         data.names = names;
         data.matrix = matrix; // name by name matrix
 
-        let fullMatrix = []; // partnerOne gene + partnerOne cluster on rows, partnerTwo gene + partnerTwo cluster on columns
-        let rowToIndex = new Map();
-        let columnToIndex = new Map();
-        let maxValue = -Number.MAX_VALUE;
+        dataArray = [];
+
         for (let i = 1; i < lines.length; i++) {
             let line = lines[i];
+            if (line === '') {
+                continue;
+            }
             let tokens = line.split(tab);
             let pair = tokens[interactingPairIndex];
+            let rank = parseFloat(tokens[rankIndex]);
+
+            let result = {
+                interacting_pair: pair,
+                rank: rank,
+                is_integrin: tokens[integrinIndex] === 'True',
+                secreted: tokens[secretedIndex] === 'True',
+                clustersArray: []
+            };
+            let clusterArray = [];
             for (let j = 0; j < clusterNames.length; j++) {
                 let value = parseFloat(tokens[j + rankIndex + 1]);
                 let clusters = clusterNames[j];
                 if (!isNaN(value)) {
-                    let partners = pair.split('_');
-                    let partnerOne = partners[0];
                     let partnerOneCluster = clusters[0];
-                    let partnerTwo = partners[1];
                     let partnerTwoCluster = clusters[1];
                     let partnerOneIndex = nameToIndex[partnerOneCluster];
                     let partnerTwoIndex = nameToIndex[partnerTwoCluster];
                     matrix[partnerOneIndex][partnerTwoIndex] += 1;
-
-                    let rowKey = partnerOne + ',' + partnerOneCluster;
-                    let columnKey = partnerTwo + ',' + partnerTwoCluster;
-                    let rowIndex = rowToIndex.get(rowKey);
-                    if (rowIndex === undefined) {
-                        rowIndex = rowToIndex.size;
-                        rowToIndex.set(rowKey, rowIndex);
-                    }
-                    let columnIndex = columnToIndex.get(columnKey);
-                    if (columnIndex === undefined) {
-                        columnIndex = columnToIndex.size;
-                        columnToIndex.set(columnKey, columnIndex);
-                    }
-                    let matrixRow = fullMatrix[rowIndex];
-                    if (matrixRow === undefined) {
-                        matrixRow = {};
-                        fullMatrix[rowIndex] = matrixRow;
-                    }
-                    matrixRow[columnIndex] = value;
-                    maxValue = Math.max(maxValue, value);
-                    //matrix[row][column] += value;
+                    clusterArray.push(clusters.join('_'));
+                    result.clustersArray.push(clusters);
                 }
             }
-        }
-        let dataset = new morpheus.Dataset({
-            name: '',
-            rows: fullMatrix.length,
-            columns: columnToIndex.size,
-            array: fullMatrix,
-            dataType: 'Float32'
-        });
-
-
-        let partnerOneVector = dataset.getRowMetadata().add('partner_one');
-        let partnerOneClusterVector = dataset.getRowMetadata().add('cluster');
-        for (let [key, index] of rowToIndex) {
-            key = key.split(',');
-            partnerOneVector.setValue(index, key[0]);
-            partnerOneClusterVector.setValue(index, key[1]);
-        }
-        let partnerTwoVector = dataset.getColumnMetadata().add('partner_two');
-        let partnerTwoClusterVector = dataset.getColumnMetadata().add('cluster');
-        for (let [key, index] of columnToIndex) {
-            key = key.split(',');
-            partnerTwoVector.setValue(index, key[0]);
-            partnerTwoClusterVector.setValue(index, key[1]);
-        }
-        let partnerOneClusterToRowIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerOneClusterVector);
-        let partnerTwoClusterToColumnIndices = morpheus.VectorUtil.createValueToIndicesMap(partnerTwoClusterVector);
-        data.dataset = dataset;
-        data.partnerOneClusterToRowIndices = partnerOneClusterToRowIndices;
-        data.partnerTwoClusterToColumnIndices = partnerTwoClusterToColumnIndices;
-
-
-        let geneToCount = {};
-        for (let i = 0; i < dataset.getRowCount(); i++) {
-            for (let j = 0; j < dataset.getColumnCount(); j++) {
-                if (!isNaN(dataset.getValue(i, j))) {
-                    let gene1 = partnerOneVector.getValue(i);
-                    let gene2 = partnerTwoVector.getValue(j);
-                    let prior = geneToCount[gene1];
-                    if (prior === undefined) {
-                        prior = 0;
-                    }
-                    geneToCount[gene1] = prior + 1;
-                    if (gene1 !== gene2) {
-                        let prior = geneToCount[gene2];
-                        if (prior === undefined) {
-                            prior = 0;
-                        }
-                        geneToCount[gene2] = prior + 1;
-                    }
-                }
+            if (clusterArray.length > 0) {
+                result.clusters = clusterArray.join(', ');
+                dataArray.push(result);
             }
         }
 
-        let numSignificantVectorOne = dataset.getRowMetadata().add('total interactions for partner');
-        let numSignificantVectorTwo = dataset.getColumnMetadata().add('total interactions for partner');
-        for (let i = 0; i < numSignificantVectorOne.size(); i++) {
-            numSignificantVectorOne.setValue(i, geneToCount[partnerOneVector.getValue(i)]);
-        }
-        for (let i = 0; i < numSignificantVectorTwo.size(); i++) {
-            numSignificantVectorTwo.setValue(i, geneToCount[partnerTwoVector.getValue(i)]);
-        }
-
-        heatmap = new morpheus.HeatMap({
-            dataset: dataset,
-            el: '#heatmap',
-            height: 500,
-            menu: false,
-            autohideTabBar: true,
-            closeable: false,
-            colorScheme: {
-                scalingMode: 'fixed',
-                stepped: false,
-                values: [0, Math.ceil(maxValue)],
-                colors: ['white', 'red']
-            },
-            renderReady: function (heatmap) {
-                let colorModel = heatmap.project.getRowColorModel();
-                heatmap.project.columnColorModel = heatmap.project.getRowColorModel();
-                data.names.forEach(name => {
-                    let c = colorScale(name);
-                    colorModel.setMappedValue(partnerOneClusterVector, name, c);
-                });
-            },
-
-            rowSortBy: [
-                {
-                    field: 'cluster',
-                    type: 'annotation',
-                    order: 0
-                },
-                {
-                    field: 'partner_one',
-                    type: 'annotation',
-                    order: 0,
-                }],
-
-            columnSortBy: [
-                {
-                    field: 'cluster',
-                    type: 'annotation',
-                    order: 0
-                }, {
-                    field: 'partner_two',
-                    type: 'annotation',
-                    order: 0,
-
-                }],
-            rows: [
-                {
-                    field: 'cluster',
-                    display: ['text', 'color'],
-                    highlightMatchingValues: true
-                }, {
-                    field: 'partner_one',
-                    display: ['text'],
-                    highlightMatchingValues: true
-                }, {
-                    field: numSignificantVectorOne.getName(),
-                    display: ['text'],
-                    formatter: '.0f'
-                }],
-            columns: [
-                {
-                    field: numSignificantVectorTwo.getName(),
-                    display: ['text'],
-                    formatter: '.0f'
-                },
-                {
-                    field: 'partner_two',
-                    display: ['text'],
-                    highlightMatchingValues: true
-                }, {
-                    field: 'cluster',
-                    display: ['color'],
-                    highlightMatchingValues: true
-                }],
-        });
 
         createChordDiagram();
+        $('#details').dataTable({
+            "data": dataArray,
+            scroller: true,
+            scrollY: 500,
+            "order": [[1, "asc"]],
+            "columns": [
+                {"data": "interacting_pair", title: 'interacting_pair'},
+                {"data": "rank", title: 'rank'},
+                {"data": "secreted", title: 'secreted'},
+                {"data": "is_integrin", title: 'integrin'},
+                {"data": "clusters", title: 'clusters'}
+            ]
+        });
     };
 
     reader.onerror = function (event) {
@@ -311,7 +189,6 @@ function saveSvg(svgEl, name) {
     document.body.removeChild(downloadLink);
 }
 
-let selectedClusters = new Set();
 
 function fade(opacity) {
     return function (g, i) {
@@ -324,109 +201,34 @@ function fade(opacity) {
     };
 }
 
-function updateHeatmap() {
-    let rowIndices = [];
-    let columnIndices = [];
-    selectedClusters.forEach(value => {
-        rowIndices = rowIndices.concat(data.partnerOneClusterToRowIndices.get(value));
-        columnIndices = columnIndices.concat(data.partnerTwoClusterToColumnIndices.get(value));
-
-    });
-
-    let dataset = data.dataset;
-    let filteredRowIndices = new Set();
-    for (let i = 0; i < rowIndices.length; i++) {
-        let passes = false;
-        for (let j = 0; j < dataset.getColumnCount(); j++) {
-            if (!isNaN(dataset.getValue(rowIndices[i], j))) {
-                passes = true;
-                break;
-            }
-        }
-        if (passes) {
-            filteredRowIndices.add(rowIndices[i]);
-        }
-    }
-    for (let i = 0; i < dataset.getRowCount(); i++) {
-        let passes = false;
-        for (let j = 0; j < columnIndices.length; j++) {
-            if (!isNaN(dataset.getValue(i, columnIndices[j]))) {
-                passes = true;
-                break;
-            }
-        }
-        if (passes) {
-            filteredRowIndices.add(i);
-        }
-    }
-    let datasetView = new morpheus.SlicedDatasetView(dataset, Array.from(filteredRowIndices), null);
-    let filteredColumnIndices = [];
-    for (let j = 0; j < datasetView.getColumnCount(); j++) {
-        let passes = false;
-        for (let i = 0; i < datasetView.getRowCount(); i++) {
-            if (!isNaN(datasetView.getValue(i, j))) {
-                passes = true;
-                break;
-            }
-        }
-        if (passes) {
-            filteredColumnIndices.push(j);
-        }
-    }
-    datasetView = new morpheus.SlicedDatasetView(datasetView, null, filteredColumnIndices);
-    heatmap.getProject().setFullDataset(datasetView, true);
-    heatmap.revalidate();
-}
-
-function togglepartnerOne() {
-    return function (g, i) {
-        selectedClusters.clear();
-        let partnerOneCluster = data.names[g.index];
-        if (selectedClusters.has(partnerOneCluster)) {
-            selectedClusters.delete(partnerOneCluster);
-        } else {
-            selectedClusters.add(partnerOneCluster);
-        }
-        updateHeatmap();
-    };
-}
 
 function getInteractionTable(html, sourceIndex, targetIndex) {
-    let partnerOneCluster = data.names[sourceIndex];
-    let partnerTwoCluster = data.names[targetIndex];
-    let dataset = data.dataset;
-    let rowIndices = data.partnerOneClusterToRowIndices.get(partnerOneCluster);
-    let columnIndices = data.partnerTwoClusterToColumnIndices.get(partnerTwoCluster);
-    let partnerOneVector = dataset.getRowMetadata().getByName('partner_one');
-    let partnerTwoVector = dataset.getColumnMetadata().getByName('partner_two');
+    let clusterNameOne = data.names[sourceIndex];
+    let clusterNameTwo = data.names[targetIndex];
     html.push('<table>');
-    html.push('<tr>');
-    html.push('<th>');
-    html.push(partnerOneCluster);
-    html.push('</th>');
-    html.push('<th>');
-    html.push(partnerTwoCluster);
-    html.push('</th>');
-    html.push('<th></th>');
-    html.push('</tr>');
-    let count = 0;
-    for (let i = 0; i < rowIndices.length; i++) {
-        for (let j = 0; j < columnIndices.length; j++) {
-            let value = dataset.getValue(rowIndices[i], columnIndices[j]);
-            if (!isNaN(value)) {
-                count++;
-                html.push('<tr>');
-                html.push('<td>');
-                html.push(partnerOneVector.getValue(rowIndices[i]));
-                html.push('</td>');
-                html.push('<td>');
-                html.push(partnerTwoVector.getValue(columnIndices[j]));
-                html.push('</td>');
-                html.push('<td>');
-                html.push(value);
-                html.push('</td>');
-                html.push('</tr>');
+    html.push('<tr><th>interacting_pair</th><th>rank</th><th>clusters</th></tr>');
+    for (let i = 0; i < dataArray.length; i++) {
+        let result = dataArray[i];
+        let found = false;
+        for (let j = 0; j < result.clustersArray.length; j++) {
+            if ((result.clustersArray[j][0] === clusterNameOne && result.clustersArray[j][1] === clusterNameTwo)
+                || (result.clustersArray[j][0] === clusterNameTwo && result.clustersArray[j][1] === clusterNameOne)) {
+                found = true;
+                break;
             }
+        }
+        if (found) {
+            html.push('<tr>');
+            html.push('<td>');
+            html.push(result.interacting_pair);
+            html.push('</td>');
+            html.push('<td>');
+            html.push(result.rank);
+            html.push('</td>');
+            html.push('<td style="max-width: 200px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;">');
+            html.push(result.clusters);
+            html.push('</td>');
+            html.push('</tr>');
         }
     }
     html.push('</table>');
@@ -437,9 +239,6 @@ function fadeChord(opacityArcs, opacityChords, isSelected) {
         if (isSelected) {
             let html = [];
             getInteractionTable(html, g.source.index, g.target.index);
-            html.push('<br/>');
-            getInteractionTable(html, g.target.index, g.source.index);
-
 
             tooltip.html(html.join(''))
                 .style("left", (d3.event.pageX) + "px")
@@ -468,11 +267,11 @@ let animationIndex = 0;
 function animateChords() {
     if (animating) {
         svg.selectAll(".arc path")
-            .style("opacity", d => (d.index == animationIndex) ? 0.7 : 0.1);
+            .style("opacity", d => (d.index == animationIndex) ? opacity : fadedOpacity);
         svg.selectAll(".chord path")
-            .style("opacity", d => d.source.index !== animationIndex && d.target.index != animationIndex ? 0.1 : 0.7);
+            .style("opacity", d => d.source.index !== animationIndex && d.target.index != animationIndex ? fadedOpacity : opacity);
         svg.selectAll("text")
-            .style("opacity", d => (d.index == animationIndex || data.matrix[animationIndex][d.index] > 0) ? 0.7 : 0.1);
+            .style("opacity", d => (d.index == animationIndex || data.matrix[animationIndex][d.index] > 0) ? opacity : fadedOpacity);
 
         animationIndex++;
         if (animationIndex < data.matrix.length) {
@@ -488,11 +287,11 @@ function animateChords() {
 function stopAnimation() {
     animating = false;
     svg.selectAll(".arc path")
-        .style("opacity", 1);
+        .style("opacity", opacity);
     svg.selectAll(".chord path")
-        .style("opacity", 1);
+        .style("opacity", opacity);
     svg.selectAll("text")
-        .style("opacity", 1);
+        .style("opacity", opacity);
 }
 
 
@@ -535,11 +334,11 @@ function createChordDiagram() {
 
     group.append("path")
         .attr("class", "outer")
-        .attr("fill", d => colorScale(data.names[d.index]))
+        .attr("fill", d => colorScale(d.index))
         .attr("opacity", opacity)
-        .attr("stroke", d => colorScale(data.names[d.index]))
+        .attr("stroke", d => colorScale(d.index))
         .attr("d", arc).on("mouseover", fade(.1))
-        .on("mouseout", fade(1)).on('click', togglepartnerOne());
+        .on("mouseout", fade(opacity));
 
 
     group.append("text")
@@ -555,15 +354,60 @@ function createChordDiagram() {
         .attr("text-anchor", d => d.angle > Math.PI ? "end" : null)
         .text(d => data.names[d.index]);
 
+    //Create a gradient definition for each chord
+    var grads = svg.append("defs").selectAll("linearGradient")
+        .data(chords)
+        .enter().append("linearGradient")
+        //Create a unique gradient id per chord: e.g. "chordGradient-0-4"
+        .attr("id", function (d) {
+            return "chordGradient-" + d.source.index + "-" + d.target.index;
+        })
+        //Instead of the object bounding box, use the entire SVG for setting locations
+        //in pixel locations instead of percentages (which is more typical)
+        .attr("gradientUnits", "userSpaceOnUse")
+        //The full mathematical formula to find the x and y locations
+        //of the Avenger's source chord
+        .attr("x1", function (d, i) {
+            return innerRadius * Math.cos((d.source.endAngle - d.source.startAngle) / 2 +
+                d.source.startAngle - Math.PI / 2);
+        })
+        .attr("y1", function (d, i) {
+            return innerRadius * Math.sin((d.source.endAngle - d.source.startAngle) / 2 +
+                d.source.startAngle - Math.PI / 2);
+        })
+
+        .attr("x2", function (d, i) {
+            return innerRadius * Math.cos((d.target.endAngle - d.target.startAngle) / 2 +
+                d.target.startAngle - Math.PI / 2);
+        })
+        .attr("y2", function (d, i) {
+            return innerRadius * Math.sin((d.target.endAngle - d.target.startAngle) / 2 +
+                d.target.startAngle - Math.PI / 2);
+        });
+    grads.append("stop")
+        .attr("offset", "0%")
+        .attr("stop-color", function (d) {
+            return colorScale(d.source.index);
+        });
+
+//Set the ending color (at 100%)
+    grads.append("stop")
+        .attr("offset", "100%")
+        .attr("stop-color", function (d) {
+            return colorScale(d.target.index);
+        });
     svg.append("g").attr("class", "chord")
         .selectAll("path")
         .data(chords)
         .join("path")
-        .attr("stroke", d => d3.rgb(colorScale(data.names[d.source.index])).darker())
-        .attr("fill", d => colorScale(data.names[d.source.index]))
+        .style("fill", function (d) {
+            return "url(#chordGradient-" + d.source.index + "-" + d.target.index + ")";
+        })
+        // .attr("stroke", d => d3.rgb(colorScale(data.names[d.source.index])).darker())
+        // .attr("fill", d => colorScale(data.names[d.source.index]))
         .attr("opacity", opacity)
         .attr("d", ribbon)
-        .on("mouseover", fadeChord(0.1, 0.1, true))
-        .on("mouseout", fadeChord(1, 1, false));
+        .on("mouseover", fadeChord(fadedOpacity, fadedOpacity, true))
+        .on("mouseout", fadeChord(opacity, opacity, false));
 
 }
