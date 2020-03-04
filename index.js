@@ -276,16 +276,14 @@ function animateChords() {
         svg.selectAll(".chord path")
             .style("opacity", d => d.source.index !== animationIndex && d.target.index != animationIndex ? fadedOpacity : opacity);
         svg.selectAll("text")
-            .style("opacity", d => (d.index == animationIndex || data.matrix[animationIndex][d.index] > 0) ? opacity : fadedOpacity);
+            .style("opacity", d => (d.index === animationIndex || data.matrix[animationIndex][d.index] > 0) ? opacity : fadedOpacity);
 
         animationIndex++;
-        if (animationIndex < data.matrix.length) {
-            window.setTimeout(animateChords, 400);
+        if (animationIndex >= data.matrix.length) {
+            animationIndex = 0;
         }
-    } else {
-        stopAnimation();
+        window.setTimeout(animateChords, 400);
     }
-
 
 }
 
