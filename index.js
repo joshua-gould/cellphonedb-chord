@@ -23,7 +23,7 @@ function startAnimation() {
 animateBtn.addEventListener('click', function (e) {
     if (animating) {
         animateBtn.innerText = 'Play';
-        stopAnimation();
+        animating = false;
     } else {
         animateBtn.innerText = 'Pause';
         startAnimation();
