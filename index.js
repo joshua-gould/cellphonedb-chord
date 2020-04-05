@@ -1,18 +1,17 @@
 let animateBtn = document.getElementById('animate');
 let tooltip = d3.select('#tooltip');
 let saveBtn = document.getElementById('save');
-let svg = null;
 let margin = {left: 150, top: 150, right: 150, bottom: 150};
 let width = Math.min(window.innerWidth, 750) - margin.left - margin.right;
 let height = Math.min(window.innerWidth, 750) - margin.top - margin.bottom;
 let innerRadius = Math.min(width, height) * .55;
 let outerRadius = innerRadius + 6;
-let table = null;
-let data = {matrix: [], names: []};
-let dataArray = null;
+let chordDataArray = []; // contains matrix, names, items, svg, name, animationIndex
 let animating = false;
+let table = null;
 let opacity = 0.7;
 let fadedOpacity = 0.1;
+let counter = 1;
 
 function startAnimation() {
     animating = true;
@@ -30,8 +29,20 @@ animateBtn.addEventListener('click', function (e) {
     }
 });
 saveBtn.addEventListener('click', function (e) {
-    saveSvg(svg.node(), 'chord.svg');
+    // FIXME, browser will only save 10 files at a time
+    // for (let i = 0; i < chordDataArray.length; i += 10) {
+    //
+    // }
+    saveFiles(0);
 });
+
+function saveFiles(startIndex) {
+    for (let i = startIndex; i < Math.min(chordDataArray.length, startIndex + 10); i++) {
+        let data = chordDataArray[i];
+        const svg = data.svg;
+        saveSvg(svg.node(), data.name + '.svg');
+    }
+}
 
 let colorScale = d3.scaleOrdinal([
     '#1f77b4', '#aec7e8', '#ff7f0e',
@@ -44,11 +55,17 @@ let colorScale = d3.scaleOrdinal([
     '#e7969c', '#7b4173', '#a55194', '#ce6dbd', '#de9ed6']);
 
 
-function loadFile(f) {
-    document.getElementById('chord').innerHTML = '';
+function clearVis() {
+    $('#vis').empty();
+
+    chordDataArray = [];
     document.getElementById('input-wrapper').style.minHeight = '';
     animateBtn.disabled = false;
     saveBtn.disabled = false;
+}
+
+function loadFile(f) {
+
     let reader = new FileReader();
     reader.onload = function (event) {
         let contents = event.target.result;
@@ -59,92 +76,208 @@ function loadFile(f) {
         let interactingPairIndex = header.indexOf('interacting_pair');
         let secretedIndex = header.indexOf('secreted');
         let integrinIndex = header.indexOf('is_integrin');
-        if (rankIndex === -1 || interactingPairIndex === -1 || secretedIndex === -1 || integrinIndex === -1) {
-            throw 'Error parsing file';
-        }
+        let isCellPhoneDbInput = rankIndex !== -1;
 
-        // header names are pairs of clusters separated by |
-        let nameToIndex = {};
-        let numberOfClusters = 0;
-        let clusterNames = [];
-        for (let j = rankIndex + 1; j < header.length; j++) {
-            let names = header[j].split('|');
-            clusterNames.push(names);
-            names.forEach(name => {
-                let existingIndex = nameToIndex[name];
-                if (existingIndex === undefined) {
-                    nameToIndex[name] = numberOfClusters;
-                    numberOfClusters++;
-                }
-            });
+        let fileName = f.name;
+        if (fileName.endsWith('.txt') || fileName.endsWith('.csv')) {
+            fileName = fileName.substring(0, name.length - 4);
         }
         let matrix = [];
         let names = [];
-        for (let name in nameToIndex) {
-            names[nameToIndex[name]] = name;
-        }
-        for (let i = 0; i < numberOfClusters; i++) {
-            matrix.push(new Float32Array(numberOfClusters));
-        }
+        let clusterNameToIndex = {};
+        let numberOfClusters = 0;
+        let clusterNames = [];
+        let items = [];
+        if (isCellPhoneDbInput) {
+            // header names are pairs of clusters separated by |
 
-
-        data.names = names;
-        data.matrix = matrix; // name by name matrix
-
-        dataArray = [];
-
-        for (let i = 1; i < lines.length; i++) {
-            let line = lines[i];
-            if (line === '') {
-                continue;
+            for (let j = rankIndex + 1; j < header.length; j++) {
+                let names = header[j].split('|');
+                clusterNames.push(names);
+                names.forEach(name => {
+                    let existingIndex = clusterNameToIndex[name];
+                    if (existingIndex === undefined) {
+                        clusterNameToIndex[name] = numberOfClusters;
+                        numberOfClusters++;
+                    }
+                });
             }
-            let tokens = line.split(tab);
-            let pair = tokens[interactingPairIndex];
-            let rank = parseFloat(tokens[rankIndex]);
 
-            let result = {
-                interacting_pair: pair,
-                rank: rank,
-                is_integrin: tokens[integrinIndex] === 'True',
-                secreted: tokens[secretedIndex] === 'True',
-                clustersArray: []
-            };
-            let clusterArray = [];
-            for (let j = 0; j < clusterNames.length; j++) {
-                let value = parseFloat(tokens[j + rankIndex + 1]);
-                let clusters = clusterNames[j];
-                if (!isNaN(value)) {
-                    let partnerOneCluster = clusters[0];
-                    let partnerTwoCluster = clusters[1];
-                    let partnerOneIndex = nameToIndex[partnerOneCluster];
-                    let partnerTwoIndex = nameToIndex[partnerTwoCluster];
-                    matrix[partnerOneIndex][partnerTwoIndex] += 1;
-                    clusterArray.push(clusters.join('_'));
-                    result.clustersArray.push(clusters);
+            for (let name in clusterNameToIndex) {
+                names[clusterNameToIndex[name]] = name;
+            }
+            for (let i = 0; i < numberOfClusters; i++) {
+                matrix.push(new Float32Array(numberOfClusters));
+            }
+
+
+            for (let i = 1; i < lines.length; i++) {
+                let line = lines[i];
+                if (line === '') {
+                    continue;
+                }
+                let tokens = line.split(tab);
+                let pair = tokens[interactingPairIndex];
+                let rank = parseFloat(tokens[rankIndex]);
+
+                // let result = {
+                //     name: datum.name,
+                //     interacting_pair: pair,
+                //     rank: rank,
+                //     is_integrin: tokens[integrinIndex] === 'True',
+                //     secreted: tokens[secretedIndex] === 'True',
+                //     // clustersArray: []
+                // };
+                //let clusterArray = [];
+                for (let j = 0; j < clusterNames.length; j++) {
+                    let value = parseFloat(tokens[j + rankIndex + 1]);
+                    let clusters = clusterNames[j];
+                    if (!isNaN(value)) {
+                        let partnerOneCluster = clusters[0];
+                        let partnerTwoCluster = clusters[1];
+                        let partnerOneIndex = clusterNameToIndex[partnerOneCluster];
+                        let partnerTwoIndex = clusterNameToIndex[partnerTwoCluster];
+                        matrix[partnerOneIndex][partnerTwoIndex] += 1;
+                        let result = {
+                            name: fileName,
+                            interacting_pair: pair,
+                            rank: rank,
+                            is_integrin: tokens[integrinIndex] === 'True',
+                            secreted: tokens[secretedIndex] === 'True',
+                            clusters: clusters.join('_')
+                        };
+                        items.push(result);
+                        // clusterArray.push(clusters.join('_'));
+                        // result.clustersArray.push(clusters);
+                    }
+                }
+                // if (clusterArray.length > 0) {
+                //     result.clusters = clusterArray.join(', ');
+                //     items.push(result);
+                // }
+            }
+        } else {
+            // // tsv of ligand_cluster, receptor_cluster, ligand, receptor 
+            let ligandClusterIndex = header.indexOf('ligand_cluster');
+            let receptorClusterIndex = header.indexOf('receptor_cluster');
+            let ligandIndex = header.indexOf('ligand');
+            let receptorIndex = header.indexOf('receptor');
+            let array = [];
+            for (let i = 1; i < lines.length; i++) {
+                let line = lines[i];
+                if (line === '') {
+                    continue;
+                }
+
+
+                let tokens = line.split(tab);
+                let ligandClusterName = tokens[ligandClusterIndex];
+                if (ligandClusterName === '') {
+                    continue;
+                }
+                array.push(tokens);
+                let receptorClusterName = tokens[receptorClusterIndex];
+                let existingIndex = clusterNameToIndex[ligandClusterName];
+                if (existingIndex === undefined) {
+                    clusterNameToIndex[ligandClusterName] = numberOfClusters;
+                    numberOfClusters++;
+                }
+                existingIndex = clusterNameToIndex[receptorClusterName];
+                if (existingIndex === undefined) {
+                    clusterNameToIndex[receptorClusterName] = numberOfClusters;
+                    numberOfClusters++;
                 }
             }
-            if (clusterArray.length > 0) {
-                result.clusters = clusterArray.join(', ');
-                dataArray.push(result);
+
+            for (let name in clusterNameToIndex) {
+                names[clusterNameToIndex[name]] = name;
+            }
+            for (let i = 0; i < numberOfClusters; i++) {
+                matrix.push(new Float32Array(numberOfClusters));
+            }
+
+            console.log(clusterNameToIndex);
+
+            for (let i = 0; i < array.length; i++) {
+                let tokens = array[i];
+                let ligand = tokens[ligandIndex];
+                let receptor = tokens[receptorIndex];
+                let ligandCluster = tokens[ligandClusterIndex];
+                let receptorCluster = tokens[receptorClusterIndex];
+                let partnerOneIndex = clusterNameToIndex[ligandCluster];
+                let partnerTwoIndex = clusterNameToIndex[receptorCluster];
+
+                matrix[partnerOneIndex][partnerTwoIndex] += 1;
+                let result = {
+                    name: fileName,
+                    interacting_pair: [ligand, receptor].join('_'),
+                    clusters: [ligandCluster, receptorCluster].join('_')
+                };
+                items.push(result);
+
             }
         }
 
+        let datum = {
+            names: names,
+            matrix: matrix,
+            items: items,
+            prefix: 'chord-' + counter,
+            name: fileName,
+            animationIndex: 0
+        };
+        counter++;
+        chordDataArray.push(datum);
 
-        createChordDiagram();
-        $('#details').dataTable({
-            "data": dataArray,
-            destroy: true,
-            scroller: true,
-            scrollY: 500,
-            "order": [[1, "asc"]],
-            "columns": [
-                {"data": "interacting_pair", title: 'interacting_pair'},
-                {"data": "rank", title: 'rank'},
-                {"data": "secreted", title: 'secreted'},
-                {"data": "is_integrin", title: 'integrin'},
-                {"data": "clusters", title: 'clusters'}
-            ]
-        });
+        let $div = $('<div></div>');
+        $div.appendTo($('#vis'));
+        $('<h4>' + datum.name + '</h4>').appendTo($div);
+        let $chord = $('<div class="chord"></div>');
+
+        $chord.appendTo($div);
+
+        createChordDiagram($chord[0], datum);
+
+
+        if (table == null) {
+            let $table = $('<table class="display" width="100%"></table>');
+            $table.appendTo($div);
+            table = $table.DataTable({
+                "data": items,
+                destroy: true,
+                scroller: true,
+                scrollY: 500,
+                dom: 'Bfrtip',
+                // // select: 'multi',
+                buttons: [
+                    'csv',
+                ],
+                "order": [[1, "asc"]],
+                "columns": isCellPhoneDbInput ? [
+                    {"data": "interacting_pair", title: 'interacting_pair'},
+                    {"data": "rank", title: 'rank'},
+                    {"data": "secreted", title: 'secreted'},
+                    {"data": "is_integrin", title: 'integrin'},
+                    {"data": "clusters", title: 'clusters'},
+                    {"data": "name", title: 'name'}
+                ] : [
+                    {"data": "interacting_pair", title: 'interacting_pair'},
+                    {"data": "clusters", title: 'clusters'},
+                    {"data": "name", title: 'name'}
+                ]
+            });
+        } else {
+            table.rows.add(items);
+            table.rows().invalidate().draw();
+        }
+        // table
+        //     .on('select', function (e, dt, type, indexes) {
+        //         let rowData = table.rows({selected: true}).data().toArray();
+        //
+        //     })
+        //     .on('deselect', function (e, dt, type, indexes) {
+        //         let rowData = table.rows(indexes).data().toArray();
+        //     });
     };
 
     reader.onerror = function (event) {
@@ -156,7 +289,10 @@ function loadFile(f) {
 
 let inputFile = document.getElementById("input_file");
 inputFile.addEventListener("change", function (event) {
-    loadFile(inputFile.files[0]);
+    clearVis();
+    for (let i = 0; i < inputFile.files.length; i++) {
+        loadFile(inputFile.files[i]);
+    }
 }, false);
 
 
@@ -166,7 +302,10 @@ window.addEventListener('drop', function (event) {
     event.stopPropagation();
     let dt = event.dataTransfer;
     let files = dt.files;
-    loadFile(files[0]);
+    clearVis();
+    for (let i = 0; i < files.length; i++) {
+        loadFile(files[i]);
+    }
 }, false);
 window.addEventListener('dragover', function (event) {
     document.body.style.border = '2px solid black';
@@ -183,9 +322,9 @@ window.addEventListener('dragend', function (event) {
 function saveSvg(svgEl, name) {
     svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     let svgData = svgEl.outerHTML;
-    let preface = '<?xml version="1.0" standalone="no"?>\r\n';
-    let svgBlob = new Blob([preface, svgData], {type: "image/svg+xml;charset=utf-8"});
-    let svgUrl = URL.createObjectURL(svgBlob);
+    let preface = '<?xml version="1.0" standalone="no"?>';
+    let blob = new Blob([preface, svgData], {type: "image/svg+xml;charset=utf-8"});
+    let svgUrl = URL.createObjectURL(blob);
     let downloadLink = document.createElement("a");
     downloadLink.href = svgUrl;
     downloadLink.download = name;
@@ -195,25 +334,13 @@ function saveSvg(svgEl, name) {
 }
 
 
-function fade(opacity) {
-    return function (g, i) {
-        svg.selectAll(".chord path")
-            .filter(function (d) {
-                return d.source.index != i && d.target.index != i;
-            })
-            .transition()
-            .style("opacity", opacity);
-    };
-}
-
-
-function getInteractionTable(html, sourceIndex, targetIndex) {
+function getInteractionTable(data, html, sourceIndex, targetIndex) {
     let clusterNameOne = data.names[sourceIndex];
     let clusterNameTwo = data.names[targetIndex];
     html.push('<table>');
     html.push('<tr><th>interacting_pair</th><th>rank</th><th>clusters</th></tr>');
-    for (let i = 0; i < dataArray.length; i++) {
-        let result = dataArray[i];
+    for (let i = 0; i < data.items.length; i++) {
+        let result = data.items[i];
         let found = false;
         for (let j = 0; j < result.clustersArray.length; j++) {
             if ((result.clustersArray[j][0] === clusterNameOne && result.clustersArray[j][1] === clusterNameTwo)
@@ -239,66 +366,81 @@ function getInteractionTable(html, sourceIndex, targetIndex) {
     html.push('</table>');
 }
 
-function fadeChord(opacityArcs, opacityChords, isSelected) {
+
+// function updateChordOpacity() {
+//     svg.selectAll(".chord path")
+//         .transition()
+//         .style("opacity", d => {
+//             return (indices.has(d.source.index) || indices.has(d.target.index)) ? opacity : fadedOpacity;
+//         });
+//     svg.selectAll(".arc path")
+//         .transition()
+//         .style("opacity", d => {
+//             return indices.has(d.index) ? opacity : fadedOpacity;
+//         });
+// }
+
+
+function fadeChord(data, opacity, isSelected) {
+    const svg = data.svg;
     return function (g, i) {
         if (isSelected) {
             let html = [];
-            getInteractionTable(html, g.source.index, g.target.index);
-
+            getInteractionTable(data, html, g.source.index, g.target.index);
             tooltip.html(html.join(''))
                 .style("left", (d3.event.pageX) + "px")
                 .style("top", (d3.event.pageY - 28) + "px");
         } else {
             tooltip.html('');
         }
-        svg.selectAll(".chord path")
+
+        svg.selectAll(".chord > path")
             .filter(function (d, j) {
                 return j != i;
             })
             .transition()
-            .style("opacity", opacityChords);
+            .style("opacity", opacity);
+        svg.selectAll("text")
+            .filter(function (d) {
+                return !(d.index == g.source.index || d.index == g.target.index);
+            })
+            .transition()
+            .style("opacity", opacity);
         svg.selectAll(".arc path")
             .filter(function (d) {
                 return !(d.index == g.source.index || d.index == g.target.index);
             })
             .transition()
-            .style("opacity", opacityArcs);
+            .style("opacity", opacity);
 
     };
 }
 
-let animationIndex = 0;
 
 function animateChords() {
-    if (animating) {
-        svg.selectAll(".arc path")
-            .style("opacity", d => (d.index == animationIndex) ? opacity : fadedOpacity);
-        svg.selectAll(".chord path")
-            .style("opacity", d => d.source.index !== animationIndex && d.target.index != animationIndex ? fadedOpacity : opacity);
-        svg.selectAll("text")
-            .style("opacity", d => (d.index === animationIndex || data.matrix[animationIndex][d.index] > 0) ? opacity : fadedOpacity);
+    chordDataArray.forEach(data => {
+        const svg = data.svg;
+        if (animating) {
+            svg.selectAll(".arc path")
+                .style("opacity", d => (d.index == data.animationIndex) ? opacity : fadedOpacity);
+            svg.selectAll(".chord > path")
+                .style("opacity", d => d.source.index !== data.animationIndex && d.target.index != data.animationIndex ? fadedOpacity : opacity);
+            svg.selectAll("text")
+                .style("opacity", d => (d.index === data.animationIndex || data.matrix[data.animationIndex][d.index] > 0) ? opacity : fadedOpacity);
 
-        animationIndex++;
-        if (animationIndex >= data.matrix.length) {
-            animationIndex = 0;
+            data.animationIndex++;
+            if (data.animationIndex >= data.matrix.length) {
+                data.animationIndex = 0;
+            }
         }
         window.setTimeout(animateChords, 400);
-    }
+    });
+
 
 }
 
-function stopAnimation() {
-    animating = false;
-    svg.selectAll(".arc path")
-        .style("opacity", opacity);
-    svg.selectAll(".chord path")
-        .style("opacity", opacity);
-    svg.selectAll("text")
-        .style("opacity", opacity);
-}
 
-
-function createChordDiagram() {
+function createChordDiagram(elementSelector, data) {
 
     const chord = d3.chord()
         .padAngle(.03)
@@ -313,18 +455,21 @@ function createChordDiagram() {
         .radius(innerRadius);
     const chords = chord(data.matrix);
 
-    svg = d3.select("#chord").append("svg")
+    const root = d3.select(elementSelector).append("svg")
         .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
+        .attr("height", height + margin.top + margin.bottom);
+    data.svg = root;
+    const svg = root
         .append("g")
         .attr("transform", "translate(" + (width / 2 + margin.left) + "," + (height / 2 + margin.top) + ")");
+
     //Create a gradient definition for each chord
-    var grads = svg.append("defs").selectAll("linearGradient")
+    const grads = svg.append("defs").selectAll("linearGradient")
         .data(chords)
         .enter().append("linearGradient")
         //Create a unique gradient id per chord: e.g. "chordGradient-0-4"
         .attr("id", function (d) {
-            return "chordGradient-" + d.source.index + "-" + d.target.index;
+            return data.prefix + d.source.index + "-" + d.target.index;
         })
         .attr("gradientUnits", "userSpaceOnUse")
         //The full mathematical formula to find the x and y locations
@@ -356,7 +501,8 @@ function createChordDiagram() {
             return colorScale(d.target.index);
         });
 
-    let group = svg.append("g").attr('class', 'arc')
+    // arc is outer circle
+    const group = svg.append("g").attr('class', 'arc')
         .selectAll("g")
         .data(chords.groups)
         .join("g");
@@ -366,8 +512,7 @@ function createChordDiagram() {
         .attr("fill", d => colorScale(d.index))
         .attr("opacity", opacity)
         .attr("stroke", d => colorScale(d.index))
-        .attr("d", arc).on("mouseover", fade(.1))
-        .on("mouseout", fade(opacity));
+        .attr("d", arc);
 
 
     group.append("text")
@@ -389,18 +534,18 @@ function createChordDiagram() {
         });
 
 
+    // .chord show connections
     svg.append("g").attr("class", "chord")
         .selectAll("path")
         .data(chords)
         .join("path")
         .style("fill", function (d) {
-            return "url(#chordGradient-" + d.source.index + "-" + d.target.index + ")";
+            return "url(#" + data.prefix + d.source.index + "-" + d.target.index + ")";
         })
         // .attr("stroke", d => d3.rgb(colorScale(data.names[d.source.index])).darker())
         // .attr("fill", d => colorScale(data.names[d.source.index]))
         .attr("opacity", opacity)
-        .attr("d", ribbon)
-        .on("mouseover", fadeChord(fadedOpacity, fadedOpacity, true))
-        .on("mouseout", fadeChord(opacity, opacity, false));
+        .attr("d", ribbon).on("mouseover", fadeChord(data, fadedOpacity, true))
+        .on("mouseout", fadeChord(data, opacity, false));
 
 }
