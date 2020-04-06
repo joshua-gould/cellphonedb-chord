@@ -65,7 +65,7 @@ function clearVis() {
 }
 
 function loadFile(f) {
-
+    console.log(f);
     let reader = new FileReader();
     reader.onload = function (event) {
         let contents = event.target.result;
@@ -80,7 +80,7 @@ function loadFile(f) {
 
         let fileName = f.name;
         if (fileName.endsWith('.txt') || fileName.endsWith('.csv')) {
-            fileName = fileName.substring(0, name.length - 4);
+            fileName = fileName.substring(0, fileName.length - 4);
         }
         let matrix = [];
         let names = [];
@@ -196,7 +196,6 @@ function loadFile(f) {
                 matrix.push(new Float32Array(numberOfClusters));
             }
 
-            console.log(clusterNameToIndex);
 
             for (let i = 0; i < array.length; i++) {
                 let tokens = array[i];
