@@ -65,7 +65,6 @@ function clearVis() {
 }
 
 function loadFile(f) {
-    console.log(f);
     let reader = new FileReader();
     reader.onload = function (event) {
         let contents = event.target.result;
@@ -144,7 +143,8 @@ function loadFile(f) {
                             rank: rank,
                             is_integrin: tokens[integrinIndex] === 'True',
                             secreted: tokens[secretedIndex] === 'True',
-                            clusters: clusters.join('_')
+                            clusters: clusters.join('_'),
+                            _clusters: clusters
                         };
                         items.push(result);
                         // clusterArray.push(clusters.join('_'));
@@ -333,34 +333,32 @@ function saveSvg(svgEl, name) {
 }
 
 
-function getInteractionTable(data, html, sourceIndex, targetIndex) {
+function getInteractionTable(data, html, sourceIndex, targetIndex, name) {
     let clusterNameOne = data.names[sourceIndex];
     let clusterNameTwo = data.names[targetIndex];
     html.push('<table>');
     html.push('<tr><th>interacting_pair</th><th>rank</th><th>clusters</th></tr>');
     for (let i = 0; i < data.items.length; i++) {
-        let result = data.items[i];
-        let found = false;
-        for (let j = 0; j < result.clustersArray.length; j++) {
-            if ((result.clustersArray[j][0] === clusterNameOne && result.clustersArray[j][1] === clusterNameTwo)
-                || (result.clustersArray[j][0] === clusterNameTwo && result.clustersArray[j][1] === clusterNameOne)) {
-                found = true;
-                break;
-            }
+        let item = data.items[i];
+        if (item.name !== name) {
+            continue;
         }
-        if (found) {
+        if ((item._clusters[0] === clusterNameOne && item._clusters[1] === clusterNameTwo)
+            || (item._clusters[0] === clusterNameTwo && item._clusters[1] === clusterNameOne)) {
             html.push('<tr>');
             html.push('<td>');
-            html.push(result.interacting_pair);
+            html.push(item.interacting_pair);
             html.push('</td>');
             html.push('<td>');
-            html.push(result.rank);
+            html.push(item.rank);
             html.push('</td>');
             html.push('<td style="max-width: 200px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;">');
-            html.push(result.clusters);
+            html.push(item.clusters);
             html.push('</td>');
             html.push('</tr>');
         }
+
+
     }
     html.push('</table>');
 }
@@ -382,10 +380,11 @@ function getInteractionTable(data, html, sourceIndex, targetIndex) {
 
 function fadeChord(data, opacity, isSelected) {
     const svg = data.svg;
+    
     return function (g, i) {
         if (isSelected) {
             let html = [];
-            getInteractionTable(data, html, g.source.index, g.target.index);
+            getInteractionTable(data, html, g.source.index, g.target.index, data.name);
             tooltip.html(html.join(''))
                 .style("left", (d3.event.pageX) + "px")
                 .style("top", (d3.event.pageY - 28) + "px");
