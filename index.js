@@ -44,7 +44,7 @@ function saveFiles(startIndex) {
     }
 }
 
-let colorScale = d3.scaleOrdinal([
+var colorScale = d3.scaleOrdinal([
     '#1f77b4', '#aec7e8', '#ff7f0e',
     '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd',
     '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f',
@@ -317,6 +317,15 @@ window.addEventListener('dragend', function (event) {
 
 }, false);
 
+window.addEventListener('keydown', function (e) {
+    var commandKey = e.metaKey || e.ctrlKey;
+    if (commandKey && e.key === 's') {
+        e.preventDefault();
+        saveFiles(0);
+    }
+
+
+}, false);
 
 function saveSvg(svgEl, name) {
     svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -380,7 +389,7 @@ function getInteractionTable(data, html, sourceIndex, targetIndex, name) {
 
 function fadeChord(data, opacity, isSelected) {
     const svg = data.svg;
-    
+
     return function (g, i) {
         if (isSelected) {
             let html = [];
@@ -491,12 +500,14 @@ function createChordDiagram(elementSelector, data) {
     grads.append("stop")
         .attr("offset", "0%")
         .attr("stop-color", function (d) {
-            return colorScale(d.source.index);
+            return colorScale(data.names[d.source.index]);
+            // return colorScale(d.source.index);
         });
     grads.append("stop")
         .attr("offset", "100%")
         .attr("stop-color", function (d) {
-            return colorScale(d.target.index);
+            return colorScale(data.names[d.target.index]);
+            // return colorScale(d.target.index);
         });
 
     // arc is outer circle
@@ -507,9 +518,15 @@ function createChordDiagram(elementSelector, data) {
 
     group.append("path")
         .attr("class", "outer")
-        .attr("fill", d => colorScale(d.index))
+        .attr("fill", d => {
+            return colorScale(data.names[d.index]);
+            // return colorScale(d.index);
+        })
         .attr("opacity", opacity)
-        .attr("stroke", d => colorScale(d.index))
+        .attr("stroke", d => {
+            return colorScale(data.names[d.index]);
+            // colorScale(d.index);
+        })
         .attr("d", arc);
 
 
