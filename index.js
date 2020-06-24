@@ -85,6 +85,13 @@ function loadFile(f) {
         let names = [];
         let clusterNameToIndex = {};
         let numberOfClusters = 0;
+        if (window.clusterOrder !== undefined) {
+            for (let i = 0; i < clusterOrder.length; i++) {
+                clusterNameToIndex[clusterOrder[i]] = i;
+                numberOfClusters++;
+            }
+        }
+
         let clusterNames = [];
         let items = [];
         if (isCellPhoneDbInput) {
